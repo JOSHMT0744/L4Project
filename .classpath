@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<classpath>
+	<classpathentry kind="con" path="org.eclipse.jdt.launching.JRE_CONTAINER/org.eclipse.jdt.internal.debug.ui.launcher.StandardVMType/JavaSE-21">
+		<attributes>
+			<attribute name="module" value="true"/>
+		</attributes>
+	</classpathentry>
+	<classpathentry excluding="domains/" kind="src" path="src"/>
+	<classpathentry kind="lib" path="C:/Users/Dell/OneDrive - Durham University/Computing/Year 4/Project/Code/DeltaIoT_Code/72-artifact/DeltaIoT-executables/Simulation/gurobi-10.0.3.jar">
+		<attributes>
+			<attribute name="module" value="true"/>
+		</attributes>
+	</classpathentry>
+	<classpathentry kind="lib" path="C:/Users/Dell/OneDrive - Durham University/Computing/Year 4/Project/Code/DeltaIoT_Code/72-artifact/DeltaIoT-executables/Simulation/joptimizer-4.0.0.jar">
+		<attributes>
+			<attribute name="module" value="true"/>
+		</attributes>
+	</classpathentry>
+	<classpathentry kind="lib" path="C:/Users/Dell/OneDrive - Durham University/Computing/Year 4/Project/Code/DeltaIoT_Code/72-artifact/DeltaIoT-executables/Simulation/json-simple-4.0.1.jar">
+		<attributes>
+			<attribute name="module" value="true"/>
+		</attributes>
+	</classpathentry>
+	<classpathentry kind="lib" path="C:/Users/Dell/OneDrive - Durham University/Computing/Year 4/Project/Code/DeltaIoT_Code/72-artifact/DeltaIoT-executables/Simulation/libpomdp-parser-1.0.0.jar">
+		<attributes>
+			<attribute name="module" value="true"/>
+		</attributes>
+	</classpathentry>
+	<classpathentry kind="lib" path="C:/Users/Dell/OneDrive - Durham University/Computing/Year 4/Project/Code/DeltaIoT_Code/72-artifact/DeltaIoT-executables/Simulation/lpsolve-5.5.2.0.jar">
+		<attributes>
+			<attribute name="module" value="true"/>
+		</attributes>
+	</classpathentry>
+	<classpathentry kind="lib" path="C:/Users/Dell/OneDrive - Durham University/Computing/Year 4/Project/Code/DeltaIoT_Code/72-artifact/DeltaIoT-executables/Simulation/Simulator.jar" sourcepath="C:/Users/Dell/OneDrive - Durham University/Computing/Year 4/Project/Code/DeltaIoT_Code/72-artifact/DeltaIoT-source/Simulator/bin">
+		<attributes>
+			<attribute name="module" value="true"/>
+		</attributes>
+	</classpathentry>
+	<classpathentry kind="lib" path="C:/Users/Dell/OneDrive - Durham University/Computing/Year 4/Project/Code/DeltaIoT_Code/72-artifact/DeltaIoT-executables/Simulation/log4j-api-2.24.3.jar">
+		<attributes>
+			<attribute name="module" value="true"/>
+		</attributes>
+	</classpathentry>
+	<classpathentry kind="lib" path="C:/Users/Dell/OneDrive - Durham University/Computing/Year 4/Project/Code/DeltaIoT_Code/72-artifact/DeltaIoT-executables/Simulation/antlr-runtime-3.5.2.jar">
+		<attributes>
+			<attribute name="module" value="true"/>
+		</attributes>
+	</classpathentry>
+	<classpathentry kind="lib" path="C:/Users/Dell/OneDrive - Durham University/Computing/Year 4/Project/Code/DeltaIoT_Code/72-artifact/DeltaIoT-executables/Simulation/mtj-1.0.4.jar">
+		<attributes>
+			<attribute name="module" value="true"/>
+		</attributes>
+	</classpathentry>
+	<classpathentry kind="output" path="bin"/>
+</classpath>

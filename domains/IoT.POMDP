@@ -1,0 +1,108 @@
+# Problem based on DELTAIoT Simulator
+# 
+
+discount: 0.9
+values: reward
+states: S1 S2 S3 S4
+actions: DTP ITP # Transmission Power
+observations: SNR-L SNR-E SNR-G # Signal-to-noise Ratio (low, expected, good)
+
+start: 0.25 0.25 0.25 0.25 # Uniform belief over states
+
+T: DTP : S1 : S1 #(T=transition probs.) i.e., If we take action DTP in state 1, the probability of transitioning to S1 is 0.8188
+0.8188
+T: DTP : S1 : S2 
+0.0712
+T: DTP : S1 : S3 
+0.1012
+T: DTP : S1 : S4 
+0.0088
+T: DTP : S2 : S1 
+0.8188
+T: DTP : S2 : S2 
+0.1012
+T: DTP : S2 : S3 
+0.0712
+T: DTP : S2 : S4 
+0.0088
+T: DTP : S3 : S1 
+0.8064
+T: DTP : S3 : S2 
+0.0336
+T: DTP : S3 : S3 
+0.1536
+T: DTP : S3 : S4 
+0.0064
+T: DTP : S4 : S1 
+0.7917
+T: DTP : S4 : S2 
+0.0783
+T: DTP : S4 : S3 
+0.1183
+T: DTP : S4 : S4 
+0.0117
+T: ITP : S1 : S1 
+0.833
+T: ITP : S1 : S2 
+0.017
+T: ITP : S1 : S3 
+0.147
+T: ITP : S1 : S4 
+0.003
+T: ITP : S2 : S1 
+0.8448
+T: ITP : S2 : S2 
+0.0352
+T: ITP : S2 : S3 
+0.1152
+T: ITP : S2 : S4 
+0.0048
+T: ITP : S3 : S1 
+0.7227
+T: ITP : S3 : S2 
+0.0073
+T: ITP : S3 : S3 
+0.2673
+T: ITP : S3 : S4 
+0.0027
+T: ITP : S4 : S1 
+0.7372
+T: ITP : S4 : S2 
+0.0228
+T: ITP : S4 : S3 
+0.2328
+T: ITP : S4 : S4
+0.0072
+
+O: DTP : * : SNR-L # (O = Observation probs, i.e., right now they are uniform. This one says that given decrease in TP, we will observe low SNR with 1/3 prob.)
+0.333
+O: DTP : * : SNR-E
+0.333
+O: DTP : * : SNR-G
+0.333
+O: ITP : * : SNR-L
+0.333
+O: ITP : * : SNR-E
+0.333
+O: ITP : * : SNR-G
+0.333
+
+R: DTP : S1 : * : * # (R = reward probs.) i.e., Taking action FTP in S1 yields a reward of 90 regardless of observation or next staet
+90.0
+R: DTP : S2 : * : *
+30.0
+R: DTP : S3 : * : *
+50.0
+R: DTP : S4 : * : *
+0.0
+
+R: ITP : S1 : * : *
+87.0
+R: ITP : S2 : * : *
+80.0
+R: ITP : S3 : * : *
+30.0
+R: ITP : S4 : * : *
+0.0
+
+
