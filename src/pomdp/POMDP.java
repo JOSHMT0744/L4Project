@@ -183,75 +183,38 @@ public class POMDP {
 	public int nextState(int currentState, int action) {
 		// TODO Auto-generated method stub
 		///check for DeltaIOT//////////////////////////////
-		iot.DeltaIOTConnector dataConnector=new iot.DeltaIOTConnector();
-		if(action==0)
-		{
+		iot.DeltaIOTConnector dataConnector = new iot.DeltaIOTConnector();
+		
+		if(action == 0) {
 			System.out.println("DTP");
-			dataConnector.performDTP(); // decrease transmission power
-			
-			
-			
-			///check it
-			ArrayList<QoS> result = iot.DeltaIOTConnector.networkMgmt.getNetworkQoS(iot.DeltaIOTConnector.timestepiot+1);
-			
-			double packetLoss=result.get(result.size()-1).getPacketLoss();
-			double energyConsumption=result.get(result.size()-1).getEnergyConsumption();
-			//System.out.println("packet loss: "+pl+"   "+ec);
-			if(energyConsumption<20 && packetLoss<0.20)
-			{
-				return 0;
-			}
-			else if(energyConsumption<20 && packetLoss>=0.20)
-			{
-				return 1;
-			}
-			else if(energyConsumption>=20 && packetLoss<0.20)
-			{
-				return 2;
-			}
-			else if(energyConsumption>=20 && packetLoss>=0.20)
-			{
-				return 3;
-			}
-			
-			
+			dataConnector.performDTP(); // decrease transmission power			
 		}
-		else if(action==1)
-		{
-			dataConnector.performITP();
-			
-			///check it
-			ArrayList<QoS> result = iot.DeltaIOTConnector.networkMgmt.getNetworkQoS(iot.DeltaIOTConnector.timestepiot+1);
-			
-			
-			double packetLoss=result.get(result.size()-1).getPacketLoss();
-			double energyConsumption=result.get(result.size()-1).getEnergyConsumption();
-			
-			if(energyConsumption<20 && packetLoss<0.20)
-			{
-				return 0;
-			}
-			else if(energyConsumption<20 && packetLoss>=0.20)
-			{
-				return 1;
-			}
-			else if(energyConsumption>=20 && packetLoss<0.20)
-			{
-				return 2;
-			}
-			else if(energyConsumption>=20 && packetLoss>=0.20)
-			{
-				return 3;
-			}
-			
+		else if(action==1) {
+			System.out.println("ITP");
+			dataConnector.performITP();	 // increase transmission power		
 		}
 		
+		ArrayList<QoS> result = iot.DeltaIOTConnector.networkMgmt.getNetworkQoS(iot.DeltaIOTConnector.timestepiot+1); // get a visual of what this ArrayList<QoS> actually looks like
+		double packetLoss = result.get(result.size()-1).getPacketLoss();
+		// This is being performed inside of loop of the motes, so use timestepiot to get QoS for that specific mote
+		double energyConsumption = result.get(result.size()-1).getEnergyConsumption();
 		
-		
-		
+		if(energyConsumption < 20 && packetLoss < 0.20) {
+			return 0;
+		}
+		else if(energyConsumption < 20 && packetLoss >= 0.20) {
+			return 1;
+		}
+		else if(energyConsumption >= 20 && packetLoss < 0.20) {
+			return 2;
+		}
+		else if(energyConsumption >= 20 && packetLoss >= 0.20) {
+			return 3;
+		}
 		
 		return 0;
 	}
+	
 	///Set it to currentState at the beginning. Each integer indicates the state
 	public int getInitialState()
 	{

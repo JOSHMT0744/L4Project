@@ -55,6 +55,8 @@ import pomdp.POMDP;
 import pomdp.Parser;
 import pomdp.SolverProperties;
 
+import charts.LineChart;
+
 
 
 public class SolvePOMDP {
@@ -481,9 +483,20 @@ public class SolvePOMDP {
 		}
 		
 		SolvePOMDP ps = new SolvePOMDP();
-		//ps.run(args[0]);
 		
 		ps.run("IoT.POMDP");
 		ps.close();
+		
+		// Graph output
+
+		LineChart linechart_MEC = new LineChart("MECSattimestep.txt", "MEC Satisfaction", "MEC over time");
+		LineChart linechart_RPL = new LineChart("RPLSattimestep.txt", "RPL Satisfaction", "RPL over time");
+
+		
+		linechart_MEC.pack();
+		linechart_RPL.pack();
+		linechart_MEC.setVisible(true);
+		linechart_RPL.setVisible(true);
+
 	}
 }

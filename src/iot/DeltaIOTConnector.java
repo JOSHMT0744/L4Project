@@ -1,25 +1,14 @@
 package iot;
 
-import java.io.BufferedReader;
-import java.io.FileReader;
-import java.io.FileWriter;
-import java.io.IOException;
-import java.io.PrintWriter;
-import java.security.DrbgParameters.NextBytes;
 import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.List;
 
-import deltaiot.DeltaIoTSimulator;
-import deltaiot.client.Effector;
-import deltaiot.client.Probe;
 import deltaiot.client.SimulationClient;
 import deltaiot.services.Link;
 import deltaiot.services.LinkSettings;
 import deltaiot.services.Mote;
 import pomdp.POMDP;
-import simulator.QoS;
-import simulator.Simulator;
 import solver.BeliefPoint;
 
 /**
@@ -665,22 +654,21 @@ maxxvall.clear();
 		return 0;
 	}
 	
-	public int performAction(int action)
-	{
+	public int performAction(int action) {
 		////Perform ITP or DTP on the link on the simulator
 		///return rewards and observations
 		//update belief value and change initial belief
 		
 		///Immediate Reward
-		double reward = p.getReward(p.getCurrentState(), action);
+		//double reward = p.getReward(p.getCurrentState(), action);
 		int nextstate;
 
 		// Depending on if action==0 or 1, it will perform either DTP ITP
-		nextstate=p.nextState(p.getCurrentState(), action);
+		nextstate = p.nextState(p.getCurrentState(), action);
 		p.setCurrentState(nextstate);
 		
 		///Observation
-		int obs=p.getObservation(action, nextstate);
+		int obs = p.getObservation(action, nextstate);
 		// Despite being called "Initial" belief, consider this the current belief
 		BeliefPoint b=p.updateBelief(p.getInitialBelief(), action, obs);
 		p.setInitialBelief(b);
@@ -727,34 +715,30 @@ maxxvall.clear();
 	//for(Mote m:DeltaIOTConnector.motes) {
 		//if(m.getLinks().size()==1)
 		//{
-		for(Link l:DeltaIOTConnector.selectedmote.getLinks())
-		{
+		for(Link l : DeltaIOTConnector.selectedmote.getLinks()) {
 			//DeltaIOTConnector.selectedlink=m.getLink(0);
-			DeltaIOTConnector.selectedlink=l;
+			DeltaIOTConnector.selectedlink = l;
 				if (DeltaIOTConnector.selectedlink.getSNR() > 0 && DeltaIOTConnector.selectedlink.getPower() >0) {
 					
 				
 					value=DeltaIOTConnector.selectedlink.getPower()-1;
 					int valueSF=DeltaIOTConnector.selectedlink.getSF();
-					if(valueSF>7)
-					{
+					if(valueSF > 7) {
 						//System.out.println(valueSF+"       "+value+"~~~~~~~~~~~~~");
-					valueSF=DeltaIOTConnector.selectedlink.getSF()-1;
-					//System.out.println(valueSF+"       "+value+"~~~~~~~~~~~~~");
+						valueSF=DeltaIOTConnector.selectedlink.getSF()-1;
+						//System.out.println(valueSF+"       "+value+"~~~~~~~~~~~~~");
 					}
 					List<LinkSettings> newSettings=new LinkedList<LinkSettings>();
 					newSettings.add(new LinkSettings(DeltaIOTConnector.selectedmote.getMoteid(), DeltaIOTConnector.selectedlink.getDest(), value, DeltaIOTConnector.selectedlink.getDistribution(), valueSF));
 		
-					DeltaIOTConnector.networkMgmt.getEffector().setMoteSettings(DeltaIOTConnector.selectedmote.getMoteid(),newSettings);
-					
+					DeltaIOTConnector.networkMgmt.getEffector().setMoteSettings(DeltaIOTConnector.selectedmote.getMoteid(),newSettings);	
 				}
-		}
+			}
 	//}
 			
 				
 		for (Mote mote : DeltaIOTConnector.motes) {
-			if(mote.getLinks().size()>1)
-			{
+			if(mote.getLinks().size() > 1) {
 				
 				left =mote.getLinks().get(0);
 				right = mote.getLinks().get(1);
@@ -775,16 +759,11 @@ maxxvall.clear();
 						valueleft=left.getDistribution() - 10;
 						left.setDistribution(valueleft);
 						right.setDistribution(valueright);
+						}
 					}
-				
+				}
 			}
-				
-			}
-	}
-		
-		
-		
-	}
+		}
 	
 	
 	
@@ -806,27 +785,29 @@ maxxvall.clear();
 			//for(Mote m:DeltaIOTConnector.motes) {
 				//if(m.getLinks().size()==1)
 				//{
-				for(Link l:DeltaIOTConnector.selectedmote.getLinks())
-				{
+				for(Link l : DeltaIOTConnector.selectedmote.getLinks()) {
 				
 					//DeltaIOTConnector.selectedlink=m.getLink(0);
-					DeltaIOTConnector.selectedlink=l;
+					DeltaIOTConnector.selectedlink = l;
 					
-				if (DeltaIOTConnector.selectedlink.getSNR() < 0 && DeltaIOTConnector.selectedlink.getPower() < 15) {
-					//DeltaIOTConnector.selectedlink=l;
-				
-					value=DeltaIOTConnector.selectedlink.getPower()+1;
-					int valueSF=DeltaIOTConnector.selectedlink.getSF();
-					if(valueSF<12)
-					{
-					valueSF=DeltaIOTConnector.selectedlink.getSF()+1;
+					// SNR = Signal to Noise Ratio -> used as a basis for adjusting transmission power
+					// If SNR < 0, the logic increases the power, if SNR > 0, decrease power
+					// Goal: keep SNR at a level where packets aren't lost but without wasting energy
+					if (DeltaIOTConnector.selectedlink.getSNR() < 0 && DeltaIOTConnector.selectedlink.getPower() < 15) {
+						//DeltaIOTConnector.selectedlink=l;
+					
+						value=DeltaIOTConnector.selectedlink.getPower()+1;
+						int valueSF=DeltaIOTConnector.selectedlink.getSF();
+						if(valueSF<12)
+						{
+						valueSF=DeltaIOTConnector.selectedlink.getSF()+1;
+						}
+						List<LinkSettings> newSettings=new LinkedList<LinkSettings>();
+						newSettings.add(new LinkSettings(DeltaIOTConnector.selectedmote.getMoteid(), DeltaIOTConnector.selectedlink.getDest(), value, DeltaIOTConnector.selectedlink.getDistribution(), valueSF));
+			
+						DeltaIOTConnector.networkMgmt.getEffector().setMoteSettings(DeltaIOTConnector.selectedmote.getMoteid(),newSettings);
+						
 					}
-					List<LinkSettings> newSettings=new LinkedList<LinkSettings>();
-					newSettings.add(new LinkSettings(DeltaIOTConnector.selectedmote.getMoteid(), DeltaIOTConnector.selectedlink.getDest(), value, DeltaIOTConnector.selectedlink.getDistribution(), valueSF));
-		
-					DeltaIOTConnector.networkMgmt.getEffector().setMoteSettings(DeltaIOTConnector.selectedmote.getMoteid(),newSettings);
-					
-				}
 				}
 	//}
 
@@ -834,8 +815,7 @@ maxxvall.clear();
 			//}
 		//}
 		for (Mote mote : DeltaIOTConnector.motes) {
-			if(mote.getLinks().size()==2)
-			{
+			if(mote.getLinks().size() == 2) {
 				
 				left =mote.getLinks().get(0);
 				right = mote.getLinks().get(1);
@@ -856,12 +836,10 @@ maxxvall.clear();
 						valueleft=left.getDistribution() - 10;
 						left.setDistribution(valueleft);
 						right.setDistribution(valueright);
+						}
 					}
-				
+				}
 			}
-				
-			}
+		}
 	}
-	}
-}
 

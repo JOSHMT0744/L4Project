@@ -51,5 +51,10 @@
 			<attribute name="module" value="true"/>
 		</attributes>
 	</classpathentry>
+	<classpathentry kind="lib" path="C:/Users/Dell/OneDrive - Durham University/Computing/Year 4/Project/Code/DeltaIoT_Code/72-artifact/DeltaIoT-executables/Simulation/jfreechart-1.5.3.jar">
+		<attributes>
+			<attribute name="module" value="true"/>
+		</attributes>
+	</classpathentry>
 	<classpathentry kind="output" path="bin"/>
 </classpath>

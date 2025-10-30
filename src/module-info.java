@@ -11,4 +11,6 @@ module L4Project {
 	requires libpomdp.parser;
 	requires joptimizer;
 	requires org.apache.logging.log4j;
+	requires org.jfree.jfreechart;
+	requires java.desktop;
 }
