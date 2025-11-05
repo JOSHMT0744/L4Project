@@ -52,10 +52,12 @@ import lpsolver.LPModel;
 import lpsolver.LPSolve;
 import lpsolver.LPjoptimizer;
 import pomdp.POMDP;
-import pomdp.Parser;
+//import pomdp.Parser;
+import pomdp.PomdpParser;
 import pomdp.SolverProperties;
 
 import charts.LineChart;
+import charts.BoxWhiskerChart;
 
 
 
@@ -271,8 +273,7 @@ public class SolvePOMDP {
 	 * Method to run experiments for DeltaIoT case using POMDP
 	 * @param pomdpFileName
 	 */
-	public void runCaseIoT(String pomdpFileName)
-	{
+	public void runCaseIoT(String pomdpFileName) {
 		///Results Log
 		try
 		{
@@ -297,7 +298,7 @@ public class SolvePOMDP {
 		
 		
 		// read POMDP file
-		POMDP pomdp = Parser.readPOMDP(domainDir+"/"+pomdpFileName);
+		POMDP pomdp = PomdpParser.readPOMDP(domainDir+"/"+pomdpFileName);
 		iot.DeltaIOTConnector.p=pomdp;
 		
 	
@@ -310,7 +311,8 @@ public class SolvePOMDP {
 		
 		iot.DeltaIOTConnector deltaConnector = new iot.DeltaIOTConnector();
 		iot.DeltaIOTConnector.timestepiot = 0;
-		for(int timestep=0; timestep < 100; timestep++) {
+		
+		for (int timestep = 0; timestep < 100; timestep++) {
 			/*
 			 * MONITOR
 			 */
@@ -330,6 +332,7 @@ public class SolvePOMDP {
 			
 			/*
 			 * Make KNOWLEDGE adjustment here??
+			 * POMDP contains `public double[][][] transitionFunction;` that needs to be adjusted
 			 */
 		
 		
@@ -339,6 +342,7 @@ public class SolvePOMDP {
 				// THis will simulate sending packets through the network to the gateways
 				// Each gateway will aggregate information about packet-loss and power-consumption
 				// The QoS values will be stored in the Simulator object
+				
 				/*
 				 * ANALYSE
 				 */
@@ -486,17 +490,19 @@ public class SolvePOMDP {
 		
 		ps.run("IoT.POMDP");
 		ps.close();
-		
-		// Graph output
 
+		
+		// Graph output		
 		LineChart linechart_MEC = new LineChart("MECSattimestep.txt", "MEC Satisfaction", "MEC over time");
 		LineChart linechart_RPL = new LineChart("RPLSattimestep.txt", "RPL Satisfaction", "RPL over time");
-
-		
 		linechart_MEC.pack();
 		linechart_RPL.pack();
+		
+		BoxWhiskerChart bw_MEC = new BoxWhiskerChart("MECSattimestep.txt", "MEC Satisfaction", "MEC over time");
+		bw_MEC.pack();
+		
 		linechart_MEC.setVisible(true);
 		linechart_RPL.setVisible(true);
-
+		bw_MEC.setVisible(true);
 	}
 }

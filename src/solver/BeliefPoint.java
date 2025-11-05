@@ -94,9 +94,9 @@ public class BeliefPoint {
 	/**
 	 * Checks whether two belief points are identical based on their history list
 	 */
-	public boolean equals(Object o) {
-		if(o instanceof BeliefPoint) {
-			List<Integer> otherHistory = ((BeliefPoint) o).getHistory();
+	public boolean equals(Object obj) {
+		if(obj instanceof BeliefPoint) {
+			List<Integer> otherHistory = ((BeliefPoint) obj).getHistory();
 			
 			if(history.size() != otherHistory.size()) {
 				return false;
@@ -104,7 +104,7 @@ public class BeliefPoint {
 			else {
 				boolean isEqual = true;
 				
-				for(int i=0; i<history.size()&&isEqual; i++) {
+				for(int i = 0; i < history.size() && isEqual; i++) {
 					isEqual = isEqual && (history.get(i)==otherHistory.get(i));
 				}
 				
@@ -128,7 +128,7 @@ public class BeliefPoint {
 	}
 	
 	/**
-	 * Returns true if action observation probabilities have been initialized
+	 * Returns true if action observation probabilities have been initialised
 	 * @return
 	 */
 	public boolean hasActionObservationProbabilities() {

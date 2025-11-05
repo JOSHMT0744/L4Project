@@ -13,9 +13,7 @@ public class ReadData {
 		
 	public ReadData() { }
 	
-	
-	
-	protected Map<Integer, Double> readFile(String filePath) throws FileNotFoundException, IOException {
+	public static Map<Integer, Double> readFile(String filePath) throws FileNotFoundException, IOException {
 		Map<Integer, Double> values = new LinkedHashMap<>();
 		
 		try (BufferedReader bufReader = new BufferedReader(new FileReader(filePath))) {
@@ -35,11 +33,11 @@ public class ReadData {
 		return values;
 	}
 	
-	public DefaultCategoryDataset getDataset(String filename) {
+	public static DefaultCategoryDataset getDataset(String filename) {
 		Map<Integer, Double> values = null;
 		
 		try {
-			values = this.readFile(filename);
+			values = readFile(filename);
 		} catch (IOException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
@@ -47,7 +45,6 @@ public class ReadData {
 		
 		DefaultCategoryDataset dataset = new DefaultCategoryDataset( );
 		for (Map.Entry<Integer, Double> val : values.entrySet()) {
-			System.out.println(val.getKey()+""+val.getValue());
 			dataset.addValue(val.getValue(), "x-axis title", val.getKey());
 		}
 		

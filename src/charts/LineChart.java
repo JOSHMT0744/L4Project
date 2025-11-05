@@ -9,25 +9,21 @@ import org.jfree.chart.plot.PlotOrientation;
 import org.jfree.data.category.DefaultCategoryDataset;
 
 public class LineChart extends ApplicationFrame{
-	
+
 	public LineChart(String filename, String applicationTitle, String chartTitle) {
 		super(applicationTitle);
 		// applicationTile
+		
+		DefaultCategoryDataset dataset = ReadData.getDataset(filename);
 		JFreeChart lineChart = ChartFactory.createLineChart(
 				chartTitle, 
-				"Timestep (t)",
 				applicationTitle, 
-				this.getDataset(filename), PlotOrientation.VERTICAL,
+				"Timestep (t)",
+				dataset, PlotOrientation.VERTICAL,
 				true, true, false);
 		
 		ChartPanel chartPanel = new ChartPanel(lineChart);
 		chartPanel.setPreferredSize(new java.awt.Dimension(500, 367));
 		setContentPane(chartPanel);
-	}
-	
-	private DefaultCategoryDataset getDataset(String filename) {
-		ReadData readObj = new ReadData();
-		DefaultCategoryDataset dataset = readObj.getDataset(filename);
-		return dataset;
 	}
 }

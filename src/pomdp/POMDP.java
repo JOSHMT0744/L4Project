@@ -83,12 +83,12 @@ public class POMDP {
 	}
 	
 	public double getTransitionProbability(int s, int a, int sNext) {
-		assert s<nStates && a<nActions && sNext<nStates;
+		assert s < nStates && a < nActions && sNext < nStates;
 		return transitionFunction[s][a][sNext];
 	}
 	
 	public double getReward(int s, int a) {
-		assert s<nStates && a<nActions;
+		assert s < nStates && a < nActions;
 		return rewardFunction[s][a];
 	}
 	
@@ -113,8 +113,15 @@ public class POMDP {
 		return actionLabels.get(a);
 	}
 	
+	/**
+	 * 
+	 * @param b = belief at current timestep
+	 * @param a = action executed by SAS
+	 * @param o = observation from action a
+	 * @return
+	 */
 	public BeliefPoint updateBelief(BeliefPoint b, int a, int o) {
-		assert a<nActions && o<nObservations;
+		assert a < nActions && o < nObservations;
 		double[] newBelief = new double[nStates];
 		
 		// check if belief point has been prepared
@@ -127,10 +134,11 @@ public class POMDP {
 		assert nc > 0.0 : "o cannot be observed when executing a in belief b";
 		
 		// compute the new belief vector
-		for(int sNext=0; sNext<nStates; sNext++) {
+		// -> For each state we are "possibly" in (according to belief likelihood), calculate transition probability for each state we could "possibly" end up in
+		for(int sNext = 0; sNext < nStates; sNext++) {
 			double beliefEntry = 0.0;
 			
-			for(int s=0; s<nStates; s++) {
+			for(int s = 0; s < nStates; s++) {
 				beliefEntry += getTransitionProbability(s, a, sNext) * b.getBelief(s);
 			}
 			
@@ -140,27 +148,35 @@ public class POMDP {
 		return new BeliefPoint(newBelief);
 	}
 	
+	/**
+	 * Calculates the `aoprobs` for the belief, b. 
+	 * This is done by iterating over the matrix and for each possible state, calculate the transition probability (getTransitionProbability()).
+	 * Then sum the average probability based on confidence across all belief state probabilities.
+	 * @param b
+	 */
 	public void prepareBelief(BeliefPoint b) {
 		assert b != null;
 		if(b.hasActionObservationProbabilities()) return;
 		
 		double[][] aoProbs = new double[nActions][nObservations];
 		
-		for(int a=0; a<nActions; a++) {
-			for(int o=0; o<nObservations; o++) {
+		for(int action = 0; action<nActions; action++) {
+			for(int obs=0; obs < nObservations; obs++) {
 				double prob = 0.0;
 				
-				for(int sNext=0; sNext<nStates; sNext++) {
+				for(int sNext=0; sNext < nStates; sNext++) {
 					double p = 0.0;
 					
 					for(int s=0; s<nStates; s++) {
-						p += getTransitionProbability(s, a, sNext) * b.getBelief(s);
+						// p = the belief-confidence averaged transition probability
+						// so p is effectively the belief's quantification of T(s', s, a)
+						p += getTransitionProbability(s, action, sNext) * b.getBelief(s);
 					}
 					
-					prob += getObservationProbability(a, sNext, o) * p;
+					prob += getObservationProbability(action, sNext, obs) * p;
 				}
 				
-				aoProbs[a][o] = prob;
+				aoProbs[action][obs] = prob;
 			}
 		}
 		
@@ -216,44 +232,36 @@ public class POMDP {
 	}
 	
 	///Set it to currentState at the beginning. Each integer indicates the state
-	public int getInitialState()
-	{
-		///check it
+	public int getInitialState() {
+		// (PacketLoss, PowerConsumption, Period (timestep)) for all timesteps up to now
 		ArrayList<QoS> result = iot.DeltaIOTConnector.networkMgmt.getNetworkQoS(1);
 		
 		System.out.println("result size"+result.size());
+		// Get PL and EC at current timestep
 		double packetLoss = result.get(result.size()-1).getPacketLoss();
 		double energyConsumption = result.get(result.size()-1).getEnergyConsumption();
 		
-		if(energyConsumption < 20 && packetLoss < 0.20)
-		{
+		if(energyConsumption < 20 && packetLoss < 0.20) {
 			return 0;
 		}
-		else if(energyConsumption < 20 && packetLoss >= 0.20)
-		{
+		else if(energyConsumption < 20 && packetLoss >= 0.20) {
 			return 1;
 		}
-		else if(energyConsumption >= 20 && packetLoss < 0.20)
-		{
+		else if(energyConsumption >= 20 && packetLoss < 0.20) {
 			return 2;
 		}
-		else if(energyConsumption >= 20 && packetLoss >= 0.20)
-		{
+		else if(energyConsumption >= 20 && packetLoss >= 0.20) {
 			return 3;
 		}
-		
-	
 		
 		return 0;
 	}
 	
-	public int getCurrentState()
-	{
+	public int getCurrentState() {
 		return currentState;
 	}
 	
-	public void setCurrentState(int s)
-	{
+	public void setCurrentState(int s) {
 		currentState=s;
 	}
 	
