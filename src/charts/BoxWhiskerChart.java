@@ -23,13 +23,15 @@ import org.jfree.data.statistics.DefaultBoxAndWhiskerXYDataset;
 
 public class BoxWhiskerChart extends ApplicationFrame {
 	
-	public BoxWhiskerChart(String filename, String applicationTitle, String chartTitle) {
+	public BoxWhiskerChart(String[] filenames, String applicationTitle, String chartTitle) {
 		super(applicationTitle);
 		JFreeChart bwChart = null;
 		
 		try {
-			Map<Integer, Double> datasetMap = ReadData.readFile(filename);
-			bwChart = this.createChart(datasetMap);
+			
+			Map<Integer, Double> datasetMapMEC = ReadData.readFile(filenames[0]);
+			Map<Integer, Double> datasetMapRPL = ReadData.readFile(filenames[1]);
+			bwChart = this.createChart(datasetMapMEC, datasetMapRPL);
 			
 			CategoryPlot plot = (CategoryPlot) bwChart.getPlot();
 			BoxAndWhiskerRenderer renderer = new BoxAndWhiskerRenderer();
@@ -58,30 +60,46 @@ public class BoxWhiskerChart extends ApplicationFrame {
 		}
 	}
 	
-	private JFreeChart createChart(Map<Integer, Double> dataset) {
-		BoxAndWhiskerCategoryDataset boxDataset = this.convertToBoxWhiskerDataset(dataset, "MEC measurement");
+	private JFreeChart createChart(Map<Integer, Double> datasetMEC, Map<Integer, Double> datasetRPL) {
+		DefaultBoxAndWhiskerCategoryDataset dataset = new DefaultBoxAndWhiskerCategoryDataset();
+		
+		
+		
+		BoxAndWhiskerCategoryDataset boxDataset = this.convertToBoxWhiskerDataset(datasetMEC, datasetRPL);
 		JFreeChart chart = ChartFactory.createBoxAndWhiskerChart(
-				"Distribution of MEC measurements", 
-				"NFR Category", 
-				"Energy Consumption (Coulumbs)", 
+				"NFR Satisfaction Levels", 
+				"Group", 
+				"Value", 
 				boxDataset, 
-				false);
+				true);
 		return chart;	
 	}
 	
-	private BoxAndWhiskerCategoryDataset convertToBoxWhiskerDataset(Map<Integer, Double> datasetMap, String measure) {
-		List<Double> values = new ArrayList<>(datasetMap.values());
-		System.out.println(values);
+	private BoxAndWhiskerCategoryDataset convertToBoxWhiskerDataset(Map<Integer, Double> datasetMapMEC, Map<Integer, Double> datasetMapRPL) {
+		
 		
 		DefaultBoxAndWhiskerCategoryDataset  boxDataset = new DefaultBoxAndWhiskerCategoryDataset();
+		
+		// First dataset MEC
+		List<Double> valuesMEC = new ArrayList<>(datasetMapMEC.values());
+		boxDataset.add(valuesMEC, "MEC (Coulombs)", "Non-Functional Requirement");
+		
+		// Second dataset RPL
+		List<Double> valuesRPL = new ArrayList<>(datasetMapRPL.values());
+		valuesRPL.replaceAll(x -> x * 100);
+		boxDataset.add(valuesRPL, "RPL (%)", "Non-Functional Requirement");
+		
+		/*
 		BoxAndWhiskerItem item = BoxAndWhiskerCalculator.calculateBoxAndWhiskerStatistics(values);
 		
 		boxDataset.add(
 				item, 
 				measure, 
 				"Over all time");
+		*/
 		
 		// 3) Diagnostic output: confirm dataset dimensions and stats
+		/*
         System.out.println("=== Box Dataset Diagnostics ===");
         System.out.println("number of rows (series): " + boxDataset.getRowCount());
         System.out.println("number of columns (categories): " + boxDataset.getColumnCount());
@@ -98,6 +116,7 @@ public class BoxWhiskerChart extends ApplicationFrame {
         System.out.println("minRegular=" + min + ", maxRegular=" + max);
         System.out.println("outliers (count) = " + (item.getOutliers() == null ? 0 : item.getOutliers().size()));
         System.out.println("================================");
+        */
 		return boxDataset;
 	}
 

@@ -139,6 +139,7 @@ public class POMDP {
 			double beliefEntry = 0.0;
 			
 			for(int s = 0; s < nStates; s++) {
+				// getTransitionProbability(s, a, sNext) is X_n (in  S!S!L)
 				beliefEntry += getTransitionProbability(s, a, sNext) * b.getBelief(s);
 			}
 			
@@ -160,7 +161,7 @@ public class POMDP {
 		
 		double[][] aoProbs = new double[nActions][nObservations];
 		
-		for(int action = 0; action<nActions; action++) {
+		for(int action = 0; action < nActions; action++) {
 			for(int obs=0; obs < nObservations; obs++) {
 				double prob = 0.0;
 				
@@ -269,14 +270,6 @@ public class POMDP {
 	public int getObservation(Integer action, Integer statePrime) {
 		// TODO Auto-generated method stub
 		
-		//DeltaIOTConnector.motes = DeltaIOTConnector.networkMgmt.getProbe().getAllMotes();
-			
-		//DeltaIOTConnector.motes = DeltaIOTConnector.networkMgmt.getProbe().getAllMotes();
-		//ArrayList<Mote> motesobs=DeltaIOTConnector.networkMgmt.getProbe().getAllMotes();	
-			
-			//SF example
-		//for(Mote m:DeltaIOTConnector.motes)
-		//{
 		System.out.println("observation function: mote no:  "+iot.DeltaIOTConnector.selectedmote.getMoteid());
 		//for (Link link : DeltaIOTConnector.selectedmote.getLinks()) {
 		for (Link link : iot.DeltaIOTConnector.selectedmote.getLinks()) {	
@@ -300,14 +293,6 @@ public class POMDP {
 				return 0;
 			}
 		}
-		
-		//}
-		//}
-		/*if (mote.getLinks().size() == 2) {
-			if (mote.getLinks().get(0).getPower() != mote.getLinks().get(1).getPower())
-				return true;
-		}
-		*/
 		return 0;
 	}	
 

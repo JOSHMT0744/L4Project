@@ -327,14 +327,7 @@ public class SolvePOMDP {
 			System.out.println("Initial state: "+currState);
 			pomdp.setCurrentState(currState);
 			
-			System.out.println("current state: "+ pomdp.getCurrentState());
-			
-			
-			/*
-			 * Make KNOWLEDGE adjustment here??
-			 * POMDP contains `public double[][][] transitionFunction;` that needs to be adjusted
-			 */
-		
+			System.out.println("current state: "+ pomdp.getCurrentState());		
 		
 			for(Mote m : iot.DeltaIOTConnector.motes) {
 				System.out.println("\nTime Step: "+timestep);
@@ -356,12 +349,18 @@ public class SolvePOMDP {
 				BeliefPoint initialbelief = pomdp.getInitialBelief(); // b0
 				double b[] = initialbelief.getBelief();
 				System.out.println(b[0]+" "+b[1]+" "+b[2]+" "+b[3]);
-				double mecsatprob = b[0]+b[1]; // How does this line work..?
+				double mecsatprob = b[0]+b[1]; // Sum of all states in which MEC is satisfied
 				double rplsatprob = b[0]+b[2];
 				pwMECSatProb.println(timestep+" "+mecsatprob);
 				pwRPLSatProb.println(timestep+" "+rplsatprob);
 				pwMECSatProb.flush();
 				pwRPLSatProb.flush();
+				
+				/*
+				 * Make KNOWLEDGE adjustment here, as we now receive and have analysed data coming from motes
+				 * POMDP contains `public double[][][] transitionFunction;` that needs to be adjusted
+				 */
+				
 				
 				/*
 				 * PLANNING
@@ -382,7 +381,11 @@ public class SolvePOMDP {
 				// Select the best alpha vector and its action
 				int bestindex = AlphaVector.getBestVectorIndex(pomdp.getInitialBelief().getBelief(), V1);
 				int selectedAction = V1.get(bestindex).getAction();
-				System.out.println("Selected Action: "+selectedAction);
+				System.out.println("Selected Action: " + selectedAction);
+				
+				// Put knowledge update here?
+				// Really, want this function in the deltaiotconnector, as we want it triggered before belief is updated. 
+				// Otherwise, we are comparing the posterior belief rather than the prior
 				
 				
 				pwaction.println(timestep+" "+selectedAction);
@@ -391,19 +394,23 @@ public class SolvePOMDP {
 				/*
 				 * EXECUTE
 				 */
-				obj.put("Selected Action", selectedAction+"");
-				pomdp.setInitialBelief(initialbelief); 
+				obj.put("Selected Action: ", selectedAction+"");
+				pomdp.setInitialBelief(initialbelief); // update initial belief for the next step
 				iot.DeltaIOTConnector.p = pomdp;
 				deltaConnector.performAction(selectedAction);
-				pomdp=iot.DeltaIOTConnector.p; // as POMDP is being updated in performAction, must adjust the variable `pomdp` here
+				pomdp = iot.DeltaIOTConnector.p; // as POMDP is being updated in performAction, must adjust the variable `pomdp` here
 			 
-				System.out.println("Current State: "+pomdp.getCurrentState());
+				System.out.println("Current State: " + pomdp.getCurrentState());
 				// timestepiot is acting as an index for retrieving QoS for each mote
 			 	ArrayList<QoS> result = DeltaIOTConnector.networkMgmt.getNetworkQoS(iot.DeltaIOTConnector.timestepiot+1); 
 			 	System.out.println("QOS list size: "+result.size());
 				
-			 	double packetLoss=result.get(result.size()-1).getPacketLoss();
-			 	double energyConsumption=result.get(result.size()-1).getEnergyConsumption();
+			 	
+			 	/*
+			 	 * MONITOR
+			 	 */
+			 	double packetLoss = result.get(result.size()-1).getPacketLoss();
+			 	double energyConsumption = result.get(result.size()-1).getEnergyConsumption();
 			 	System.out.println("packet loss: "+packetLoss+"   Energy Consumption: "+energyConsumption);
 			 	
 			 	pwMECSat.println(timestep+" "+energyConsumption);
@@ -490,7 +497,6 @@ public class SolvePOMDP {
 		
 		ps.run("IoT.POMDP");
 		ps.close();
-
 		
 		// Graph output		
 		LineChart linechart_MEC = new LineChart("MECSattimestep.txt", "MEC Satisfaction", "MEC over time");
@@ -498,7 +504,10 @@ public class SolvePOMDP {
 		linechart_MEC.pack();
 		linechart_RPL.pack();
 		
-		BoxWhiskerChart bw_MEC = new BoxWhiskerChart("MECSattimestep.txt", "MEC Satisfaction", "MEC over time");
+		String[] filenames = {"MECSattimestep.txt", "RPLSattimestep.txt"};
+		
+		BoxWhiskerChart bw_MEC = new BoxWhiskerChart(filenames, "MEC Satisfaction", "MEC over time");
+		//BoxWhiskerChart bw_MEC = new BoxWhiskerChart("MECSattimestep.txt", "MEC Satisfaction", "MEC over time");
 		bw_MEC.pack();
 		
 		linechart_MEC.setVisible(true);
