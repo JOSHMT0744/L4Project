@@ -1,6 +1,7 @@
 package iot;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedList;
 import java.util.List;
 
@@ -71,6 +72,66 @@ public class DeltaIOTConnector {
 		return 0;
 	}
 	
+	private double[] getStatePredictiveProbs(double[][][] transitionBelief, int action, int nextstate) {
+		// Calculate belief pseudo-counts for all possible next states, and then for the specifically chosen next state
+		// Use sum over rows as a normaliser so probability is in [0,1]
+		double[] nextstatePredictiveProbVals  = new double[p.getNumStates()];
+
+		for (int stateIndex = 0; stateIndex < p.getNumStates(); stateIndex++) {
+			double normaliser = Arrays.stream(transitionBelief[stateIndex][action]).sum();
+			double beliefProb = p.getInitialBelief().getBelief(stateIndex);
+			
+			double rowExpectationProb = transitionBelief[stateIndex][action][nextstate] / normaliser;
+			nextstatePredictiveProbVals[stateIndex] = beliefProb * rowExpectationProb;
+		}
+		
+		return nextstatePredictiveProbVals;
+	}
+	
+	private void updateTransitionBelief(int action, int nextstate) {
+		double[][][] transitionBeliefCurr = p.transitionBeliefCurr;
+		double[][][] transitionBeliefReset = p.transitionBeliefReset;
+		
+		double[] predictiveProbCurrVals = this.getStatePredictiveProbs(transitionBeliefCurr, action, nextstate);
+		double predictiveProbCurr = Arrays.stream(predictiveProbCurrVals).sum();
+		assert predictiveProbCurr >= 0 && predictiveProbCurr <= 1;
+		
+		double[] predictiveProbResetVals = this.getStatePredictiveProbs(transitionBeliefReset, action, nextstate);
+		double predictiveProbReset = Arrays.stream(predictiveProbResetVals).sum();
+		assert predictiveProbReset >= 0 && predictiveProbReset <= 1;
+		
+		// Calculate Bayes Factor Surprise
+		double surpriseBF = predictiveProbReset / predictiveProbCurr;
+		
+		// Predefined rate m dictates how much model changes
+		double m = 0.6;
+		double gamma = (m * surpriseBF) / (1 + m * surpriseBF);
+		
+		// Now compute the likelihood of the transition coming from each state, to be able to update the transition beliefs
+		// Normalise each prob value by dividing by sum of all the probs in the list
+		double[] currPredProbsNormalised = new double[p.getNumStates()];
+		double[] resetPredProbsNormalised = new double[p.getNumStates()];
+		for (int stateIndex = 0; stateIndex < p.getNumStates(); stateIndex++) {
+			currPredProbsNormalised[stateIndex] = predictiveProbCurrVals[stateIndex] / Arrays.stream(predictiveProbCurrVals).sum();
+			resetPredProbsNormalised[stateIndex] = predictiveProbResetVals[stateIndex] / Arrays.stream(predictiveProbResetVals).sum();
+		}
+		
+		// Update pseudo-counts by adding normalised likelihoods to relevant indexes
+		// This reflects our adjustment in the confidence of the elected transition
+		for (int stateIndex = 0; stateIndex < p.getNumStates(); stateIndex++) {
+			transitionBeliefCurr[stateIndex][action][nextstate] += currPredProbsNormalised[stateIndex];
+			transitionBeliefReset[stateIndex][action][nextstate] += resetPredProbsNormalised[stateIndex];		
+		}
+		
+		// varSMiLE updating of transitionBeliefCurr
+		for (int stateIndex = 0; stateIndex < p.getNumStates(); stateIndex++) {
+			transitionBeliefCurr[stateIndex][action][nextstate] = (1- gamma) * transitionBeliefCurr[stateIndex][action][nextstate] + gamma * transitionBeliefReset[stateIndex][action][nextstate];
+		}
+		
+		p.transitionBeliefCurr = transitionBeliefCurr;
+		p.transitionBeliefReset = transitionBeliefReset;
+	}
+	
 	public int performAction(int action) {
 		////Perform ITP or DTP on the link on the simulator
 		///return rewards and observations
@@ -83,6 +144,15 @@ public class DeltaIOTConnector {
 		// Depending on if action==0 or 1, it will perform either DTP ITP
 		nextstate = p.nextState(p.getCurrentState(), action);
 		p.setCurrentState(nextstate);
+		
+		// Calculate surprise of nextstate
+		// Do so by iterating over probability of being in each state and multiplying by expected transition probability (using alpha hparams)
+		
+		
+		// update world probabilities by taking Expectation[transitionBeliefCurr] 
+		//// TODO HERE
+		this.updateTransitionBelief(action, nextstate);
+		// I've circumvented this by using the pseudo counts to just calculate instances of probabilities in the getTransitionProbability function when required
 		
 		///Observation
 		int obs = p.getObservation(action, nextstate);

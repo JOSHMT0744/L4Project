@@ -19,6 +19,7 @@
 package pomdp;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 
 import deltaiot.services.Link;
@@ -40,11 +41,27 @@ public class POMDP {
 	private double[][][] observationFunction;
 	private double minReward = Double.POSITIVE_INFINITY;
 	
+	// alpha vectors for Dir(.) distribution representing transition probabilities
+	public double[][][] transitionBeliefReset;
+	public double[][][] transitionBeliefCurr;
+	
 	private BeliefPoint b0;
 	
 	private HashMap<Integer,String> actionLabels;
 	
-	public POMDP(String filename, int nStates, int nActions, int nObservations, double discountFactor, double[][] rewardFunction, double[][][] transitionFunction, double[][][] observationFunction, HashMap<Integer,String> actionLabels, BeliefPoint b0) {		
+	public POMDP(String filename, 
+			int nStates, 
+			int nActions, 
+			int nObservations, 
+			double discountFactor, 
+			double[][] rewardFunction, 
+			double[][][] transitionFunction, 
+			double[][][] observationFunction, 
+			HashMap<Integer,String> actionLabels, 
+			BeliefPoint b0,
+			double[][][] transitionBeliefReset, // effectively a collection of SxA dirichlet distribution hyperparameter collections of size S
+			double[][][] transitionBeliefCurr
+			) {		
 		String[] filenameSplit = filename.split("/");
 		this.filename = filenameSplit[filenameSplit.length-1];
 		this.instanceName = filenameSplit[filenameSplit.length-1].replace(".POMDP", "");
@@ -57,6 +74,11 @@ public class POMDP {
 		this.observationFunction = observationFunction;
 		this.actionLabels = actionLabels;
 		this.b0 = b0;
+		
+		// Using beliefs instead of fixed probs for transitions
+		this.transitionBeliefReset = transitionBeliefReset;
+		this.transitionBeliefCurr = transitionBeliefCurr;
+		
 		
 		// compute min reward
 		for(int s=0; s<nStates; s++) {
@@ -84,7 +106,9 @@ public class POMDP {
 	
 	public double getTransitionProbability(int s, int a, int sNext) {
 		assert s < nStates && a < nActions && sNext < nStates;
-		return transitionFunction[s][a][sNext];
+		// take expectation over beliefs as an update of the world model
+		double worldTransitionFn = transitionBeliefCurr[s][a][sNext] / (Arrays.stream(transitionBeliefCurr[s][a]).sum()); // 1e-6 + 
+		return worldTransitionFn;
 	}
 	
 	public double getReward(int s, int a) {
@@ -93,7 +117,7 @@ public class POMDP {
 	}
 	
 	public double getObservationProbability(int a, int sNext, int o) {
-		assert a<nActions && sNext<nStates && o<nObservations;
+		assert a < nActions && sNext<nStates && o < nObservations;
 		return observationFunction[a][sNext][o];
 	}
 	
@@ -187,6 +211,7 @@ public class POMDP {
 	public BeliefPoint getInitialBelief() {
 		return b0;
 	}
+	
 	/////Added for for IoT
 	public void setInitialBelief(BeliefPoint b)
 	{
@@ -294,9 +319,7 @@ public class POMDP {
 			}
 		}
 		return 0;
-	}	
-
-		
+	}			
 }
 	
 	

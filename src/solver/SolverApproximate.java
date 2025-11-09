@@ -117,7 +117,7 @@ public class SolverApproximate implements Solver {
 					for(int s=0; s<nStates; s++) {
 						double val = 0.0;
 						
-						for(int sPrime=0; sPrime<nStates; sPrime++) {
+						for(int sPrime = 0; sPrime < nStates; sPrime++) {
 							val += pomdp.getObservationProbability(a, sPrime, o) * pomdp.getTransitionProbability(s, a, sPrime) * V.get(k).getEntry(sPrime);
 						}
 						
@@ -252,6 +252,7 @@ public class SolverApproximate implements Solver {
 		// create initial vector set and vectors defining immediate rewards
 		ArrayList<AlphaVector> V = new ArrayList<AlphaVector>();
 		ArrayList<AlphaVector> immediateRewards = new ArrayList<AlphaVector>();
+		
 		for(int a=0; a<nActions; a++) {
 			double[] entries = new double[nStates];
 			for(int s=0; s<nStates; s++) {

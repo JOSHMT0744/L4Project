@@ -26,8 +26,6 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
-
 import solver.BeliefPoint;
 
 public class PomdpParser {
@@ -225,8 +223,30 @@ public class PomdpParser {
 		System.out.println("transitionFunction " + Arrays.deepToString(observationFunction));
 		System.out.println("transitionFunction " + Arrays.toString(b0.getBelief()));
 		
+		// Initialising beliefs		
+		double[][][] transitionBeliefCurr = new double[numStates][numActions][numStates];
+		double[][][] transitionBeliefReset = new double[numStates][numActions][numStates];
+		assert transitionFunction != null;
 		
-			
+		for (int stateIndex = 0; stateIndex < numStates; stateIndex++) {
+			for (int actionIndex = 0; actionIndex < numActions; actionIndex++) {
+				System.arraycopy(transitionFunction[stateIndex][actionIndex], 0, transitionBeliefCurr[stateIndex][actionIndex], 0, numStates);
+				Arrays.fill(transitionBeliefReset[stateIndex][actionIndex], ((1/numStates) + 1e-6));
+			}
+		}
+		
+		 for (int i = 0; i < numStates; i++) {
+		        System.out.println("Layer " + i + ":");
+		        for (int j = 0; j < numActions; j++) {
+		            System.out.print("  Row " + j + ": ");
+		            for (int k = 0; k < numStates; k++) {
+		                System.out.printf("%.3f ", transitionBeliefReset[i][j][k]);
+		            }
+		            System.out.println();
+		        }
+		        System.out.println();
+		    }
+				
 		return new POMDP(filename, 
 				numStates, 
 				numActions, 
@@ -236,7 +256,9 @@ public class PomdpParser {
 				transitionFunction, 
 				observationFunction, 
 				actionLabels, 
-				b0);
+				b0,
+				transitionBeliefReset,
+				transitionBeliefCurr);
 		}
 }
 

@@ -299,6 +299,8 @@ public class SolvePOMDP {
 		
 		// read POMDP file
 		POMDP pomdp = PomdpParser.readPOMDP(domainDir+"/"+pomdpFileName);
+		
+		// set alpha-vectors here (in future can have in POMDP file)
 		iot.DeltaIOTConnector.p=pomdp;
 		
 	
