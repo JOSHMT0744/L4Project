@@ -45,6 +45,9 @@ public class POMDP {
 	public double[][][] transitionBeliefReset;
 	public double[][][] transitionBeliefCurr;
 	
+	// vectors storing entropy at each timestep for transition belief distributions
+	public double[] entropy;
+	
 	private BeliefPoint b0;
 	
 	private HashMap<Integer,String> actionLabels;
@@ -74,7 +77,7 @@ public class POMDP {
 		this.observationFunction = observationFunction;
 		this.actionLabels = actionLabels;
 		this.b0 = b0;
-		
+				
 		// Using beliefs instead of fixed probs for transitions
 		this.transitionBeliefReset = transitionBeliefReset;
 		this.transitionBeliefCurr = transitionBeliefCurr;

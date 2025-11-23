@@ -18,6 +18,7 @@
 
 package main;
 
+import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
@@ -300,10 +301,14 @@ public class SolvePOMDP {
 		// read POMDP file
 		POMDP pomdp = PomdpParser.readPOMDP(domainDir+"/"+pomdpFileName);
 		
+		int numTimesteps = 1000;
 		// set alpha-vectors here (in future can have in POMDP file)
 		iot.DeltaIOTConnector.p=pomdp;
 		
-	
+		// list to record entropys
+		double[] entropies = new double[numTimesteps];
+		double[] mutualInformations = new double[numTimesteps];
+			
 		
 		////////IoT Code///////////
 		
@@ -312,26 +317,42 @@ public class SolvePOMDP {
 		iot.DeltaIOTConnector.networkMgmt = new SimulationClient();
 		
 		iot.DeltaIOTConnector deltaConnector = new iot.DeltaIOTConnector();
+		deltaConnector.clearFile("gamma.txt");
+		deltaConnector.clearFile("surpriseBF.txt");
+		deltaConnector.clearFile("surpriseCC.txt");
 		iot.DeltaIOTConnector.timestepiot = 0;
 		
-		for (int timestep = 0; timestep < 100; timestep++) {
+		for (int timestep = 0; timestep < numTimesteps; timestep++) {
 			/*
 			 * MONITOR
 			 */
 			JsonObject obj =new JsonObject();
 			obj.put("timestep", timestep+"");
 			iot.DeltaIOTConnector.motes = iot.DeltaIOTConnector.networkMgmt.getProbe().getAllMotes();
-		
 			System.out.println("motes recieved");
-		
 
 			int currState = pomdp.getInitialState();
 			System.out.println("Initial state: "+currState);
 			pomdp.setCurrentState(currState);
 			
 			System.out.println("current state: "+ pomdp.getCurrentState());		
-		
-			for(Mote m : iot.DeltaIOTConnector.motes) {
+			
+			int numMotes = iot.DeltaIOTConnector.motes.size();
+			int[] moteIndexes = new int[numMotes];
+			for (int i = 0; i < numMotes; i++) {
+				moteIndexes[i] = i;
+			}
+			// Fisher–Yates shuffle
+			Random random = new Random();
+			for (int i = numMotes - 1; i > 0; i--) {
+			    int j = random.nextInt(i + 1);
+			    int tmp = moteIndexes[i];
+			    moteIndexes[i] = moteIndexes[j];
+			    moteIndexes[j] = tmp;
+			}
+			
+			for(int moteIndex : moteIndexes) {
+				Mote m = iot.DeltaIOTConnector.motes.get(moteIndex);
 				System.out.println("\nTime Step: "+timestep);
 				// Simulator object holds the list of motes, gateways, turnOrder, runInfo and qos values.
 				// THis will simulate sending packets through the network to the gateways
@@ -356,13 +377,7 @@ public class SolvePOMDP {
 				pwMECSatProb.println(timestep+" "+mecsatprob);
 				pwRPLSatProb.println(timestep+" "+rplsatprob);
 				pwMECSatProb.flush();
-				pwRPLSatProb.flush();
-				
-				/*
-				 * Make KNOWLEDGE adjustment here, as we now receive and have analysed data coming from motes
-				 * POMDP contains `public double[][][] transitionFunction;` that needs to be adjusted
-				 */
-				
+				pwRPLSatProb.flush();				
 				
 				/*
 				 * PLANNING
@@ -413,7 +428,12 @@ public class SolvePOMDP {
 			 	 */
 			 	double packetLoss = result.get(result.size()-1).getPacketLoss();
 			 	double energyConsumption = result.get(result.size()-1).getEnergyConsumption();
-			 	System.out.println("packet loss: "+packetLoss+"   Energy Consumption: "+energyConsumption);
+			 	// Get calculating entropy of current mote's transition belief given previous action and state movement
+			 	double entropy = deltaConnector.getMoteEntropy();
+			 	double mutualInformation = deltaConnector.getMoteMI();
+			 	entropies[timestep] += entropy;
+			 	mutualInformations[timestep] += mutualInformation;
+			 	System.out.println("packet loss: "+packetLoss+"   Energy Consumption: "+energyConsumption+"   Entropy: "+entropy+"   Mutual Information: "+mutualInformation);
 			 	
 			 	pwMECSat.println(timestep+" "+energyConsumption);
 			 	pwRPLSat.println(timestep+" "+packetLoss);
@@ -422,7 +442,7 @@ public class SolvePOMDP {
 			 	
 			 	obj.put("packet loss", packetLoss+"");
 			 	obj.put("Energy Consumption",energyConsumption+"");
-			 	iot.DeltaIOTConnector.timestepiot++;				
+			 	iot.DeltaIOTConnector.timestepiot++;		
 			 	rlist.add(obj);
 			 	
 			}///End of Motes loop
@@ -444,6 +464,20 @@ public class SolvePOMDP {
 			pwRPLSattimestep.println(plstimestep);
 			pwMECSattimestep.flush();
 			pwRPLSattimestep.flush();
+			
+			// Writing entropy values to file
+			try (BufferedWriter writer = new BufferedWriter(new FileWriter("entropy.txt"))) {
+				for (int i = 0; i < entropies.length; i++) {
+					writer.write(Integer.toString(i)+" "+Double.toString(entropies[i]));
+					writer.newLine();
+				}
+			}
+			try (BufferedWriter writer = new BufferedWriter(new FileWriter("mutualInformation.txt"))) {
+				for (int i = 0; i < mutualInformations.length; i++) {
+					writer.write(Integer.toString(i)+" "+Double.toString(mutualInformations[i]));
+					writer.newLine();
+				}
+			}
 		}
 		
 		////////////////////////////////
@@ -483,7 +517,7 @@ public class SolvePOMDP {
 	 * Main entry point of the SolvePOMDP software
 	 * @param args first argument should be a filename of a .POMDP file
 	 */
-	public static void main(String[] args) {		
+	public static void main(String[] args) {	
 		System.out.println("SolvePOMDP v0.0.3");
 		System.out.println("Author: Erwin Walraven");
 		System.out.println("Web: erwinwalraven.nl/solvepomdp");
@@ -496,15 +530,18 @@ public class SolvePOMDP {
 		}
 		
 		SolvePOMDP ps = new SolvePOMDP();
-		
 		ps.run("IoT.POMDP");
 		ps.close();
-		
+
 		// Graph output		
 		LineChart linechart_MEC = new LineChart("MECSattimestep.txt", "MEC Satisfaction", "MEC over time");
 		LineChart linechart_RPL = new LineChart("RPLSattimestep.txt", "RPL Satisfaction", "RPL over time");
+		LineChart linechart_entropy = new LineChart("entropy.txt", "Transition entropy", "Entropy over time");
+		LineChart linechart_MI = new LineChart("mutualInformation.txt", "Transition MI", "MI over time");
 		linechart_MEC.pack();
 		linechart_RPL.pack();
+		linechart_entropy.pack();
+		linechart_MI.pack();
 		
 		String[] filenames = {"MECSattimestep.txt", "RPLSattimestep.txt"};
 		
@@ -514,6 +551,8 @@ public class SolvePOMDP {
 		
 		linechart_MEC.setVisible(true);
 		linechart_RPL.setVisible(true);
+		linechart_entropy.setVisible(true);
+		linechart_MI.setVisible(true);
 		bw_MEC.setVisible(true);
 	}
 }

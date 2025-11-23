@@ -14,15 +14,16 @@ import org.jfree.chart.JFreeChart;
 import org.jfree.chart.plot.CategoryPlot;
 import org.jfree.chart.renderer.category.BoxAndWhiskerRenderer;
 import org.jfree.chart.ui.ApplicationFrame;
-import org.jfree.data.category.DefaultCategoryDataset;
-import org.jfree.data.statistics.BoxAndWhiskerCalculator;
 import org.jfree.data.statistics.BoxAndWhiskerCategoryDataset;
-import org.jfree.data.statistics.BoxAndWhiskerItem;
 import org.jfree.data.statistics.DefaultBoxAndWhiskerCategoryDataset;
-import org.jfree.data.statistics.DefaultBoxAndWhiskerXYDataset;
 
 public class BoxWhiskerChart extends ApplicationFrame {
 	
+	/**
+	 * 
+	 */
+	private static final long serialVersionUID = 1L;
+
 	public BoxWhiskerChart(String[] filenames, String applicationTitle, String chartTitle) {
 		super(applicationTitle);
 		JFreeChart bwChart = null;
@@ -60,11 +61,7 @@ public class BoxWhiskerChart extends ApplicationFrame {
 		}
 	}
 	
-	private JFreeChart createChart(Map<Integer, Double> datasetMEC, Map<Integer, Double> datasetRPL) {
-		DefaultBoxAndWhiskerCategoryDataset dataset = new DefaultBoxAndWhiskerCategoryDataset();
-		
-		
-		
+	private JFreeChart createChart(Map<Integer, Double> datasetMEC, Map<Integer, Double> datasetRPL) {		
 		BoxAndWhiskerCategoryDataset boxDataset = this.convertToBoxWhiskerDataset(datasetMEC, datasetRPL);
 		JFreeChart chart = ChartFactory.createBoxAndWhiskerChart(
 				"NFR Satisfaction Levels", 

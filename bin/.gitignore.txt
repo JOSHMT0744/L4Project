@@ -1,0 +1,3 @@
+output_dir/*
+/output_dir
+.settings

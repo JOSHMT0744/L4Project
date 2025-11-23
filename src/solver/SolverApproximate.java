@@ -268,7 +268,7 @@ public class SolverApproximate implements Solver {
 
 		//System.out.println("Stage 1: "+V.size()+" vectors");
 		
-		OutputFileWriter.dumpValueFunction(pomdp, V, sp.getOutputDir()+"/"+pomdp.getInstanceName()+".alpha"+stage, sp.dumpActionLabels());
+		//OutputFileWriter.dumpValueFunction(pomdp, V, sp.getOutputDir()+"/"+pomdp.getInstanceName()+".alpha"+stage, sp.dumpActionLabels());
 		
 		// run the backup stages
 		long startTime = System.currentTimeMillis();
@@ -278,11 +278,11 @@ public class SolverApproximate implements Solver {
 			ArrayList<AlphaVector> Vnext = backupStage(pomdp, immediateRewards, V, B);
 			double valueDifference = getValueDifference(B, V, Vnext);
 			double elapsed = (System.currentTimeMillis() - startTime) * 0.001;
-			System.out.println("Stage "+stage+": "+Vnext.size()+" vectors, diff "+valueDifference+", time elapsed "+elapsed+" sec");
+			//System.out.println("Stage "+stage+": "+Vnext.size()+" vectors, diff "+valueDifference+", time elapsed "+elapsed+" sec");
 			
 			V = Vnext;
 			
-			OutputFileWriter.dumpValueFunction(pomdp, V, sp.getOutputDir()+"/"+pomdp.getInstanceName()+".alpha"+stage, sp.dumpActionLabels());
+			//OutputFileWriter.dumpValueFunction(pomdp, V, sp.getOutputDir()+"/"+pomdp.getInstanceName()+".alpha"+stage, sp.dumpActionLabels());
 			
 			double elapsedTime = (System.currentTimeMillis() - startTime) * 0.001;
 			if(valueDifference < sp.getValueFunctionTolerance() || elapsedTime > sp.getTimeLimit()) {

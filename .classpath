@@ -6,47 +6,58 @@
 		</attributes>
 	</classpathentry>
 	<classpathentry excluding="domains/" kind="src" path="src"/>
-	<classpathentry kind="lib" path="C:/Users/Dell/OneDrive - Durham University/Computing/Year 4/Project/Code/DeltaIoT_Code/72-artifact/DeltaIoT-executables/Simulation/gurobi-10.0.3.jar">
+	<classpathentry excluding="src/" kind="src" path=""/>
+	<classpathentry kind="lib" path="C:/Users/Dell/eclipse-workspace/L4Project/libraries/antlr-runtime-3.5.2.jar">
 		<attributes>
 			<attribute name="module" value="true"/>
 		</attributes>
 	</classpathentry>
-	<classpathentry kind="lib" path="C:/Users/Dell/OneDrive - Durham University/Computing/Year 4/Project/Code/DeltaIoT_Code/72-artifact/DeltaIoT-executables/Simulation/joptimizer-4.0.0.jar">
+	<classpathentry kind="lib" path="C:/Users/Dell/eclipse-workspace/L4Project/libraries/commons-math3-3.6.1.jar">
 		<attributes>
 			<attribute name="module" value="true"/>
 		</attributes>
 	</classpathentry>
-	<classpathentry kind="lib" path="C:/Users/Dell/OneDrive - Durham University/Computing/Year 4/Project/Code/DeltaIoT_Code/72-artifact/DeltaIoT-executables/Simulation/json-simple-4.0.1.jar">
+	<classpathentry kind="lib" path="C:/Users/Dell/eclipse-workspace/L4Project/libraries/gurobi-10.0.3.jar">
 		<attributes>
 			<attribute name="module" value="true"/>
 		</attributes>
 	</classpathentry>
-	<classpathentry kind="lib" path="C:/Users/Dell/OneDrive - Durham University/Computing/Year 4/Project/Code/DeltaIoT_Code/72-artifact/DeltaIoT-executables/Simulation/lpsolve-5.5.2.0.jar">
+	<classpathentry kind="lib" path="C:/Users/Dell/eclipse-workspace/L4Project/libraries/jfreechart-1.5.3.jar">
 		<attributes>
 			<attribute name="module" value="true"/>
 		</attributes>
 	</classpathentry>
-	<classpathentry kind="lib" path="C:/Users/Dell/OneDrive - Durham University/Computing/Year 4/Project/Code/DeltaIoT_Code/72-artifact/DeltaIoT-executables/Simulation/Simulator.jar" sourcepath="C:/Users/Dell/OneDrive - Durham University/Computing/Year 4/Project/Code/DeltaIoT_Code/72-artifact/DeltaIoT-source/Simulator/bin">
+	<classpathentry kind="lib" path="C:/Users/Dell/eclipse-workspace/L4Project/libraries/joptimizer-4.0.0.jar">
 		<attributes>
 			<attribute name="module" value="true"/>
 		</attributes>
 	</classpathentry>
-	<classpathentry kind="lib" path="C:/Users/Dell/OneDrive - Durham University/Computing/Year 4/Project/Code/DeltaIoT_Code/72-artifact/DeltaIoT-executables/Simulation/log4j-api-2.24.3.jar">
+	<classpathentry kind="lib" path="C:/Users/Dell/eclipse-workspace/L4Project/libraries/json-simple-4.0.1.jar">
 		<attributes>
 			<attribute name="module" value="true"/>
 		</attributes>
 	</classpathentry>
-	<classpathentry kind="lib" path="C:/Users/Dell/OneDrive - Durham University/Computing/Year 4/Project/Code/DeltaIoT_Code/72-artifact/DeltaIoT-executables/Simulation/antlr-runtime-3.5.2.jar">
+	<classpathentry kind="lib" path="C:/Users/Dell/eclipse-workspace/L4Project/libraries/libpomdp-parser-1.0.0.jar">
 		<attributes>
 			<attribute name="module" value="true"/>
 		</attributes>
 	</classpathentry>
-	<classpathentry kind="lib" path="C:/Users/Dell/OneDrive - Durham University/Computing/Year 4/Project/Code/DeltaIoT_Code/72-artifact/DeltaIoT-executables/Simulation/mtj-1.0.4.jar">
+	<classpathentry kind="lib" path="C:/Users/Dell/eclipse-workspace/L4Project/libraries/log4j-api-2.24.3.jar">
 		<attributes>
 			<attribute name="module" value="true"/>
 		</attributes>
 	</classpathentry>
-	<classpathentry kind="lib" path="C:/Users/Dell/OneDrive - Durham University/Computing/Year 4/Project/Code/DeltaIoT_Code/72-artifact/DeltaIoT-executables/Simulation/jfreechart-1.5.3.jar">
+	<classpathentry kind="lib" path="C:/Users/Dell/eclipse-workspace/L4Project/libraries/lpsolve-5.5.2.0.jar">
+		<attributes>
+			<attribute name="module" value="true"/>
+		</attributes>
+	</classpathentry>
+	<classpathentry kind="lib" path="C:/Users/Dell/eclipse-workspace/L4Project/libraries/mtj-1.0.4.jar">
+		<attributes>
+			<attribute name="module" value="true"/>
+		</attributes>
+	</classpathentry>
+	<classpathentry kind="lib" path="C:/Users/Dell/eclipse-workspace/L4Project/libraries/Simulator.jar">
 		<attributes>
 			<attribute name="module" value="true"/>
 		</attributes>

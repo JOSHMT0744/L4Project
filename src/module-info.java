@@ -12,4 +12,5 @@ module L4Project {
 	requires org.apache.logging.log4j;
 	requires org.jfree.jfreechart;
 	requires java.desktop;
+	requires commons.math3;
 }

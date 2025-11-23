@@ -73,7 +73,6 @@ public class PomdpParser {
 		
 		while (lineIndex < lines.size()-1) {
 			lineIndex ++;
-			System.out.println("line index: "+ lineIndex);
 			String line = lines.get(lineIndex).trim();
 			line = line.toLowerCase();
 			
@@ -128,7 +127,6 @@ public class PomdpParser {
 		while (lineIndex < lines.size()-1) {
 			lineIndex ++;
 			String line = lines.get(lineIndex).trim();
-			System.out.println("Current line: " + line + "\n");
 			//line = line.toLowerCase();
 			
 			if (line.isEmpty() || line.startsWith("#")) {
@@ -151,19 +149,14 @@ public class PomdpParser {
 				String[] transTok = line.split(":");
 				
 				curActionStr = transTok[1].trim();
-				System.out.println("curactionstring: " + curActionStr);
 				curAction = actionMap.get(curActionStr);
-				System.out.println("curAction: " + curAction);
 				
 				String fromStateStr = transTok[2].trim();
 				int fromState = stateMap.get(fromStateStr);
 				
 				String toStateStr = transTok[3].trim();
-				System.out.println("toStateStr: " + toStateStr);
 				int toState = stateMap.get(toStateStr);
-				System.out.println("toState: " + toState);
 				
-				System.out.print("next line: " + lines.get(lineIndex + 1).trim() + "\n");
 				prob = Double.parseDouble(lines.get(lineIndex + 1).trim());
 				
 				transitionFunction[fromState][curAction][toState] = prob;
@@ -220,8 +213,8 @@ public class PomdpParser {
 		
 		System.out.println("rewardFunction " + Arrays.deepToString(rewardFunction));
 		System.out.println("transitionFunction " + Arrays.deepToString(transitionFunction));
-		System.out.println("transitionFunction " + Arrays.deepToString(observationFunction));
-		System.out.println("transitionFunction " + Arrays.toString(b0.getBelief()));
+		System.out.println("observation function " + Arrays.deepToString(observationFunction));
+		System.out.println("initial belief " + Arrays.toString(b0.getBelief()));
 		
 		// Initialising beliefs		
 		double[][][] transitionBeliefCurr = new double[numStates][numActions][numStates];
@@ -230,22 +223,29 @@ public class PomdpParser {
 		
 		for (int stateIndex = 0; stateIndex < numStates; stateIndex++) {
 			for (int actionIndex = 0; actionIndex < numActions; actionIndex++) {
-				System.arraycopy(transitionFunction[stateIndex][actionIndex], 0, transitionBeliefCurr[stateIndex][actionIndex], 0, numStates);
-				Arrays.fill(transitionBeliefReset[stateIndex][actionIndex], ((1/numStates) + 1e-6));
+				//System.arraycopy(transitionFunction[stateIndex][actionIndex], 0, transitionBeliefCurr[stateIndex][actionIndex], 0, numStates);#
+				Arrays.fill(transitionBeliefCurr[stateIndex][actionIndex], 1.0);
+				Arrays.fill(transitionBeliefReset[stateIndex][actionIndex], 1.0); // / Double.valueOf(numStates));
 			}
 		}
-		
-		 for (int i = 0; i < numStates; i++) {
-		        System.out.println("Layer " + i + ":");
-		        for (int j = 0; j < numActions; j++) {
-		            System.out.print("  Row " + j + ": ");
-		            for (int k = 0; k < numStates; k++) {
-		                System.out.printf("%.3f ", transitionBeliefReset[i][j][k]);
-		            }
-		            System.out.println();
-		        }
-		        System.out.println();
-		    }
+
+		 // As each value of transition belief is initially a probability, adjust this to be a minimum of 1, and scale all other values accordingly
+		/*
+		 for (int stateIndex = 0; stateIndex < numStates; stateIndex++) {
+				for (int actionIndex = 0; actionIndex < numActions; actionIndex++) {
+					double alphaMin = Arrays.stream(transitionBeliefCurr[stateIndex][actionIndex]).min().getAsDouble();
+					for (int nextStateIndex = 0; nextStateIndex < numStates; nextStateIndex++) {
+						transitionBeliefCurr[stateIndex][actionIndex][nextStateIndex] = transitionBeliefCurr[stateIndex][actionIndex][nextStateIndex] * Double.valueOf(2*numStates);
+					}
+				}
+			}
+			*/
+
+		 
+		 System.out.println("Starting transition curr belief: ");
+		 System.out.println(Arrays.deepToString(transitionBeliefCurr));
+		 System.out.println("Starting transition rest belief: ");
+		 System.out.println(Arrays.deepToString(transitionBeliefReset));
 				
 		return new POMDP(filename, 
 				numStates, 
@@ -258,7 +258,7 @@ public class PomdpParser {
 				actionLabels, 
 				b0,
 				transitionBeliefReset,
-				transitionBeliefCurr);
+				transitionBeliefCurr);				
 		}
 }
 
