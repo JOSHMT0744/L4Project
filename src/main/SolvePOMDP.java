@@ -18,12 +18,14 @@
 
 package main;
 
+import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.io.UnsupportedEncodingException;
 import java.net.URLDecoder;
@@ -34,20 +36,11 @@ import java.util.Random;
 import com.github.cliftonlabs.json_simple.JsonArray;
 import com.github.cliftonlabs.json_simple.JsonObject;
 
+import charts.BoxWhiskerChart;
+import charts.LineChart;
 import deltaiot.client.SimulationClient;
 import deltaiot.services.Mote;
 import iot.DeltaIOTConnector;
-import pruning.PruneStandard;
-import simulator.QoS;
-
-import pruning.PruneAccelerated;
-import pruning.PruneMethod;
-import solver.AlphaVector;
-import solver.BeliefPoint;
-import solver.Solver;
-import solver.SolverApproximate;
-import solver.SolverExact;
-
 import lpsolver.LPGurobi;
 import lpsolver.LPModel;
 import lpsolver.LPSolve;
@@ -56,9 +49,15 @@ import pomdp.POMDP;
 //import pomdp.Parser;
 import pomdp.PomdpParser;
 import pomdp.SolverProperties;
-
-import charts.LineChart;
-import charts.BoxWhiskerChart;
+import pruning.PruneAccelerated;
+import pruning.PruneMethod;
+import pruning.PruneStandard;
+import simulator.QoS;
+import solver.AlphaVector;
+import solver.BeliefPoint;
+import solver.Solver;
+import solver.SolverApproximate;
+import solver.SolverExact;
 
 
 
@@ -70,6 +69,22 @@ public class SolvePOMDP {
 	private Solver solver;           // the solver that we use to solve a POMDP, which is exact or approximate
 	private String domainDirName;    // name of the directory containing .POMDP files
 	private String domainDir;        // full path of the domain directory
+	
+	public static void runPython() throws Exception {
+		ProcessBuilder pb = new ProcessBuilder(".venv\\Scripts\\python.exe", "createCharts.py");
+		pb.redirectErrorStream(true);
+		Process p = pb.start();
+		
+		BufferedReader reader = new BufferedReader(
+				new InputStreamReader(p.getInputStream())
+				);
+		
+		String line;
+		while ((line = reader.readLine()) != null) {
+			System.out.println("PYTHON: " + line); // receives pandas output
+		}
+		p.waitFor();
+	}
 	
 	public SolvePOMDP() {
 		// read parameters from config file
@@ -278,21 +293,21 @@ public class SolvePOMDP {
 		///Results Log
 		try
 		{
-		FileWriter fwMECSatProb=new FileWriter("MECSatProb.txt"); // Logs the probability that MEC is satisfied 
+		FileWriter fwMECSatProb=new FileWriter("output_dir/MECSatProb.txt"); // Logs the probability that MEC is satisfied 
 		PrintWriter pwMECSatProb=new PrintWriter(fwMECSatProb);
-		FileWriter fwRPLSatProb=new FileWriter("RPLSatProb.txt"); // Logs the probability that RPL is satisfied
+		FileWriter fwRPLSatProb=new FileWriter("output_dir/RPLSatProb.txt"); // Logs the probability that RPL is satisfied
 		PrintWriter pwRPLSatProb=new PrintWriter(fwRPLSatProb);
 		
-		FileWriter fwMECSat=new FileWriter("MECSat.txt"); // Logs the MECSat value
+		FileWriter fwMECSat=new FileWriter("output_dir/MECSat.txt"); // Logs the MECSat value
 		PrintWriter pwMECSat=new PrintWriter(fwMECSat);
-		FileWriter fwRPLSat=new FileWriter("RPLSat.txt"); // Logs the RPLSat value
+		FileWriter fwRPLSat=new FileWriter("output_dir/RPLSat.txt"); // Logs the RPLSat value
 		PrintWriter pwRPLSat=new PrintWriter(fwRPLSat);
-		FileWriter fwaction=new FileWriter("SelectedAction.txt"); // Logs which action is taken increase or decrease power)
+		FileWriter fwaction=new FileWriter("output_dir/SelectedAction.txt"); // Logs which action is taken increase or decrease power)
 		PrintWriter pwaction=new PrintWriter(fwaction);
 		
-		FileWriter fwMECSattimestep=new FileWriter("MECSattimestep.txt"); // At specific timesteps
+		FileWriter fwMECSattimestep=new FileWriter("output_dir/MECSattimestep.txt"); // At specific timesteps
 		PrintWriter pwMECSattimestep=new PrintWriter(fwMECSattimestep);
-		FileWriter fwRPLSattimestep=new FileWriter("RPLSattimestep.txt");
+		FileWriter fwRPLSattimestep=new FileWriter("output_dir/RPLSattimestep.txt");
 		PrintWriter pwRPLSattimestep=new PrintWriter(fwRPLSattimestep);
 		
 		JsonArray rlist = new JsonArray();
@@ -301,7 +316,7 @@ public class SolvePOMDP {
 		// read POMDP file
 		POMDP pomdp = PomdpParser.readPOMDP(domainDir+"/"+pomdpFileName);
 		
-		int numTimesteps = 1000;
+		int numTimesteps = 500;
 		// set alpha-vectors here (in future can have in POMDP file)
 		iot.DeltaIOTConnector.p=pomdp;
 		
@@ -317,9 +332,9 @@ public class SolvePOMDP {
 		iot.DeltaIOTConnector.networkMgmt = new SimulationClient();
 		
 		iot.DeltaIOTConnector deltaConnector = new iot.DeltaIOTConnector();
-		deltaConnector.clearFile("gamma.txt");
-		deltaConnector.clearFile("surpriseBF.txt");
-		deltaConnector.clearFile("surpriseCC.txt");
+		deltaConnector.clearFile("output_dir/gamma.txt");
+		deltaConnector.clearFile("output_dir/surpriseBF.txt");
+		deltaConnector.clearFile("output_dir/surpriseCC.txt");
 		iot.DeltaIOTConnector.timestepiot = 0;
 		
 		for (int timestep = 0; timestep < numTimesteps; timestep++) {
@@ -374,8 +389,8 @@ public class SolvePOMDP {
 				System.out.println(b[0]+" "+b[1]+" "+b[2]+" "+b[3]);
 				double mecsatprob = b[0]+b[1]; // Sum of all states in which MEC is satisfied
 				double rplsatprob = b[0]+b[2];
-				pwMECSatProb.println(timestep+" "+mecsatprob);
-				pwRPLSatProb.println(timestep+" "+rplsatprob);
+				pwMECSatProb.println(moteIndex+" "+timestep+" "+mecsatprob);
+				pwRPLSatProb.println(moteIndex+" "+timestep+" "+rplsatprob);
 				pwMECSatProb.flush();
 				pwRPLSatProb.flush();				
 				
@@ -419,7 +434,7 @@ public class SolvePOMDP {
 			 
 				System.out.println("Current State: " + pomdp.getCurrentState());
 				// timestepiot is acting as an index for retrieving QoS for each mote
-			 	ArrayList<QoS> result = DeltaIOTConnector.networkMgmt.getNetworkQoS(iot.DeltaIOTConnector.timestepiot+1); 
+			 	ArrayList<QoS> result = DeltaIOTConnector.networkMgmt.getNetworkQoS(iot.DeltaIOTConnector.timestepiot+1); // check this
 			 	System.out.println("QOS list size: "+result.size());
 				
 			 	
@@ -435,8 +450,8 @@ public class SolvePOMDP {
 			 	mutualInformations[timestep] += mutualInformation;
 			 	System.out.println("packet loss: "+packetLoss+"   Energy Consumption: "+energyConsumption+"   Entropy: "+entropy+"   Mutual Information: "+mutualInformation);
 			 	
-			 	pwMECSat.println(timestep+" "+energyConsumption);
-			 	pwRPLSat.println(timestep+" "+packetLoss);
+			 	pwMECSat.println(moteIndex+" "+timestep+" "+energyConsumption);
+			 	pwRPLSat.println(moteIndex+" "+timestep+" "+packetLoss);
 			 	pwMECSat.flush();
 			 	pwRPLSat.flush();
 			 	
@@ -466,21 +481,58 @@ public class SolvePOMDP {
 			pwRPLSattimestep.flush();
 			
 			// Writing entropy values to file
-			try (BufferedWriter writer = new BufferedWriter(new FileWriter("entropy.txt"))) {
+			try (BufferedWriter writer = new BufferedWriter(new FileWriter("output_dir/entropy.txt"))) {
 				for (int i = 0; i < entropies.length; i++) {
 					writer.write(Integer.toString(i)+" "+Double.toString(entropies[i]));
 					writer.newLine();
 				}
 			}
-			try (BufferedWriter writer = new BufferedWriter(new FileWriter("mutualInformation.txt"))) {
+			try (BufferedWriter writer = new BufferedWriter(new FileWriter("output_dir/mutualInformation.txt"))) {
 				for (int i = 0; i < mutualInformations.length; i++) {
 					writer.write(Integer.toString(i)+" "+Double.toString(mutualInformations[i]));
 					writer.newLine();
 				}
 			}
+			iot.DeltaIOTConnector.timestep++;
 		}
 		
-		////////////////////////////////
+		// Mutual information surprise (MIS)
+		double[] mis = new double[mutualInformations.length];
+		mis[0] = 0; 
+		mis[1] = 0;
+		int lookback = 2; // m
+		double significanceLevel = 0.95;
+		
+		double miBound;
+		double[] misBound = new double[2];
+		
+		// Calculate MIS
+		for (int i = lookback; i < mutualInformations.length; i++) {
+			// MI is calculated as a sum over all motes
+			// to scale down (for compatability with bound), take mean MI across the system
+			mis[i] = (mutualInformations[i] - mutualInformations[i - lookback]) / iot.DeltaIOTConnector.motes.size();
+			
+			// Calculate MIS bound (with probability at least 1- significanceLevel) at each timestep
+			miBound = (Math.sqrt(2 * lookback * Math.log(2.0 / significanceLevel)) * Math.log(lookback + i)) / (lookback + i);
+			misBound[0] = (Math.log(lookback + i) - Math.log(i)) - miBound;
+			misBound[1] = (Math.log(lookback + i) - Math.log(i)) + miBound;
+		}
+		
+		try (BufferedWriter writer = new BufferedWriter(new FileWriter("output_dir/meanMIS.txt"))) {
+			for (int i = lookback; i < mutualInformations.length; i++) {
+				writer.write(Integer.toString(i)+" "+Double.toString(mis[i]));
+				writer.newLine();
+			}
+		}	
+
+		
+		try (BufferedWriter writer = new BufferedWriter(new FileWriter("output_dir/misBounds.txt"))) {
+			for (int i = lookback; i < mutualInformations.length; i++) {
+				writer.write(Integer.toString(i)+" "+Double.toString(misBound[0])+" "+Double.toString(misBound[1]));
+				writer.newLine();
+			}
+		}
+		
 		
 		
 		pwMECSat.close();
@@ -505,7 +557,6 @@ public class SolvePOMDP {
 		System.out.println("Alpha vectors: "+outputFileAlpha);
 		if(sp.dumpPolicyGraph()) System.out.println("Policy graph: "+outputFilePG);
 		System.out.println("Running time: "+solver.getTotalSolveTime()+" sec");
-		
 		}
 		catch(IOException ioex)
 		{
@@ -532,16 +583,26 @@ public class SolvePOMDP {
 		SolvePOMDP ps = new SolvePOMDP();
 		ps.run("IoT.POMDP");
 		ps.close();
+		
+		/*
+		try {
+			runPython();
+		} catch (Exception e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}*/
 
 		// Graph output		
-		LineChart linechart_MEC = new LineChart("MECSattimestep.txt", "MEC Satisfaction", "MEC over time");
+		/*LineChart linechart_MEC = new LineChart("MECSattimestep.txt", "MEC Satisfaction", "MEC over time");
 		LineChart linechart_RPL = new LineChart("RPLSattimestep.txt", "RPL Satisfaction", "RPL over time");
-		LineChart linechart_entropy = new LineChart("entropy.txt", "Transition entropy", "Entropy over time");
-		LineChart linechart_MI = new LineChart("mutualInformation.txt", "Transition MI", "MI over time");
+		LineChart linechart_entropy = new LineChart("output_dir/entropy.txt", "Transition entropy", "Entropy over time");
+		LineChart linechart_MI = new LineChart("output_dir/mutualInformation.txt", "Transition MI", "MI over time");
+		LineChart linechart_MIS = new LineChart("output_dir/meanMIS.txt", "Mean MIS", "MIS over time");
 		linechart_MEC.pack();
 		linechart_RPL.pack();
 		linechart_entropy.pack();
 		linechart_MI.pack();
+		linechart_MIS.pack();
 		
 		String[] filenames = {"MECSattimestep.txt", "RPLSattimestep.txt"};
 		
@@ -554,5 +615,6 @@ public class SolvePOMDP {
 		linechart_entropy.setVisible(true);
 		linechart_MI.setVisible(true);
 		bw_MEC.setVisible(true);
+		linechart_MIS.setVisible(true);*/
 	}
 }

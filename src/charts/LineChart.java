@@ -61,10 +61,10 @@ public class LineChart extends ApplicationFrame{
 		
 		JFreeChart lineChart = ChartFactory.createXYLineChart(
 				chartTitle, 
-				applicationTitle, 
 				"Timestep (t)",
+				applicationTitle, 
 				xyCollection, PlotOrientation.VERTICAL,
-				true, true, false);
+				false, true, false);
 		
 		// Adjust x-axis spacing labels
 		XYPlot plot = lineChart.getXYPlot();

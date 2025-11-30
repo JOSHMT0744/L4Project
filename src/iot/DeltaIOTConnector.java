@@ -33,7 +33,8 @@ public class DeltaIOTConnector {
 	public static ArrayList<Mote> motes;
 	
 	public static SimulationClient networkMgmt;
-	public static int timestepiot;
+	public static int timestepiot; // monotonic timestep increment for timestep and mote
+	public static int timestep; // monotonic increment only for timestep
 	//private static StopWatch stopwatchiot;
 	public static Integer moteids[];
 	public int selectedindex;
@@ -238,17 +239,17 @@ public class DeltaIOTConnector {
 		double logSurpriseCC = Math.log(confidenceCorrectedSurprise(transitionBeliefCurr, transitionBeliefReset, action, nextstate)); 
 				
 		// Predefined rate m dictates how much model changes
-		//double p_c = 0.6;
-		//assert p_c >= 0 && p_c < 1;
-		double m = 0.6; //p_c / (1 - p_c);
+		double p_c = 0.6;
+		assert p_c >= 0 && p_c < 1;
+		double m = p_c / (1 - p_c);
 		
-		double gamma = 1.0 / (1.0 + Math.max(eps, Math.exp(-logSurpriseBF)) / m);
+		double gamma = 1.0 / (1.0 + Math.max(eps, Math.exp(-logSurpriseCC)) / m);
 		assert gamma >= 0.0 && gamma <= 1.0;
 		//double gamma = 1.0 / (1.0 + Math.exp(-logSurpriseBF) / m);
 		
-		appendToFile("surpriseBF.txt", Math.exp(logSurpriseBF), DeltaIOTConnector.selectedmote.getMoteid(), DeltaIOTConnector.timestepiot);
-		appendToFile("gamma.txt", gamma, DeltaIOTConnector.selectedmote.getMoteid(), DeltaIOTConnector.timestepiot);
-		appendToFile("surpriseCC.txt", Math.exp(logSurpriseCC), DeltaIOTConnector.selectedmote.getMoteid(), DeltaIOTConnector.timestepiot);
+		appendToFile("output_dir/surpriseBF.txt", Math.exp(logSurpriseBF), DeltaIOTConnector.selectedmote.getMoteid(), DeltaIOTConnector.timestep);
+		appendToFile("output_dir/gamma.txt", gamma, DeltaIOTConnector.selectedmote.getMoteid(), DeltaIOTConnector.timestep);
+		appendToFile("output_dir/surpriseCC.txt", Math.exp(logSurpriseCC), DeltaIOTConnector.selectedmote.getMoteid(), DeltaIOTConnector.timestep);
 		
 		// varSMiLE updating of transitionBeliefCurr
 		// CHECK THIS. do we update all transitions, or just that of the next state
