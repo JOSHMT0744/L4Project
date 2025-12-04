@@ -352,6 +352,7 @@ public class SolvePOMDP {
 			
 			System.out.println("current state: "+ pomdp.getCurrentState());		
 			
+			// Creating random order of motes to perform adaptation 
 			int numMotes = iot.DeltaIOTConnector.motes.size();
 			int[] moteIndexes = new int[numMotes];
 			for (int i = 0; i < numMotes; i++) {
@@ -365,6 +366,7 @@ public class SolvePOMDP {
 			    moteIndexes[i] = moteIndexes[j];
 			    moteIndexes[j] = tmp;
 			}
+			// End of randomised motes
 			
 			for(int moteIndex : moteIndexes) {
 				Mote m = iot.DeltaIOTConnector.motes.get(moteIndex);
@@ -377,7 +379,7 @@ public class SolvePOMDP {
 				/*
 				 * ANALYSE
 				 */
-				iot.DeltaIOTConnector.networkMgmt.getSimulator().doSingleRun();
+				iot.DeltaIOTConnector.networkMgmt.getSimulator().doSingleRun(); // This calculates QoS values only for this run, rather than an accumulation
 				
 				iot.DeltaIOTConnector.selectedmote = m;
 				System.out.println("Mote Id"+iot.DeltaIOTConnector.selectedmote.getMoteid());
@@ -434,8 +436,9 @@ public class SolvePOMDP {
 			 
 				System.out.println("Current State: " + pomdp.getCurrentState());
 				// timestepiot is acting as an index for retrieving QoS for each mote
-			 	ArrayList<QoS> result = DeltaIOTConnector.networkMgmt.getNetworkQoS(iot.DeltaIOTConnector.timestepiot+1); // check this
+			 	ArrayList<QoS> result = (ArrayList<QoS>)DeltaIOTConnector.networkMgmt.getNetworkQoS(iot.DeltaIOTConnector.timestepiot+1); // check this
 			 	System.out.println("QOS list size: "+result.size());
+
 				
 			 	
 			 	/*
@@ -464,6 +467,11 @@ public class SolvePOMDP {
 			
 			String plstimestep = "";
 			String ecstimestep = "";
+			
+			// QoS (Quality of Service) contains 
+			// (1) the time when the last period finished 
+			// (2) the packet loss of the network
+			// (3) Energy consumption of the network
 			ArrayList<QoS> result1 = (ArrayList<QoS>)DeltaIOTConnector.networkMgmt.getSimulator().getQosValues();
 			
 			// Total packet loss and energy consumption across every mote in the network
@@ -583,14 +591,13 @@ public class SolvePOMDP {
 		SolvePOMDP ps = new SolvePOMDP();
 		ps.run("IoT.POMDP");
 		ps.close();
-		
-		/*
+
 		try {
 			runPython();
 		} catch (Exception e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
-		}*/
+		}
 
 		// Graph output		
 		/*LineChart linechart_MEC = new LineChart("MECSattimestep.txt", "MEC Satisfaction", "MEC over time");

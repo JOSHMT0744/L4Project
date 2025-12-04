@@ -44,6 +44,7 @@ public class POMDP {
 	// alpha vectors for Dir(.) distribution representing transition probabilities
 	public double[][][] transitionBeliefReset;
 	public double[][][] transitionBeliefCurr;
+	public double[][][] observationBelief;
 	
 	// vectors storing entropy at each timestep for transition belief distributions
 	public double[] entropy;
@@ -63,7 +64,8 @@ public class POMDP {
 			HashMap<Integer,String> actionLabels, 
 			BeliefPoint b0,
 			double[][][] transitionBeliefReset, // effectively a collection of SxA dirichlet distribution hyperparameter collections of size S
-			double[][][] transitionBeliefCurr
+			double[][][] transitionBeliefCurr,
+			double [][][] observationBelief
 			) {		
 		String[] filenameSplit = filename.split("/");
 		this.filename = filenameSplit[filenameSplit.length-1];
@@ -81,6 +83,9 @@ public class POMDP {
 		// Using beliefs instead of fixed probs for transitions
 		this.transitionBeliefReset = transitionBeliefReset;
 		this.transitionBeliefCurr = transitionBeliefCurr;
+		
+		// Also perform Bayesian updating for observation functions
+		this.observationBelief = observationBelief;
 		
 		
 		// compute min reward
@@ -110,10 +115,10 @@ public class POMDP {
 	public double getTransitionProbability(int s, int a, int sNext) {
 		assert s < nStates && a < nActions && sNext < nStates;
 		// take expectation over beliefs as an update of the world model
-		double worldTransitionFn = transitionBeliefCurr[s][a][sNext] / (Arrays.stream(transitionBeliefCurr[s][a]).sum()); // 1e-6 + 
+		double worldTransitionFn = transitionBeliefCurr[s][a][sNext] / (Arrays.stream(transitionBeliefCurr[s][a]).sum()); 
 		return worldTransitionFn;
 	}
-	
+		
 	public double getReward(int s, int a) {
 		assert s < nStates && a < nActions;
 		return rewardFunction[s][a];
@@ -121,7 +126,9 @@ public class POMDP {
 	
 	public double getObservationProbability(int a, int sNext, int o) {
 		assert a < nActions && sNext<nStates && o < nObservations;
-		return observationFunction[a][sNext][o];
+		// take expectation voer belifs as an update of the world model
+		double worldObservationFn = observationBelief[a][sNext][o] / (Arrays.stream(observationBelief[a][sNext]).sum()); 
+		return worldObservationFn;
 	}
 	
 	public double getMinReward() {

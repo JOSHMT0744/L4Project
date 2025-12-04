@@ -43,8 +43,7 @@ public class DeltaIOTConnector {
 	public double mutualInformation;
 	private double eps;
 	
-	public DeltaIOTConnector()
-	{
+	public DeltaIOTConnector() {
 		selectedindex=0;
 		entropy = 0.0;
 		mutualInformation = 0.0;
@@ -53,7 +52,7 @@ public class DeltaIOTConnector {
 	}
 	
 	public List<Link> getSelectedMoteLinks(Mote selectedmote) {
-		List<Link> l=selectedmote.getLinks();
+		List<Link> l = selectedmote.getLinks();
 		return l;
 	}
 
@@ -202,6 +201,10 @@ public class DeltaIOTConnector {
 	    }
 	}
 	
+	private void updateObservationBelief(int action, int nextstate, int obs) {
+		p.observationBelief[action][nextstate][obs] += 1.0;
+	}
+	
 	private void updateTransitionBelief(int action, int nextstate) {
 		// Work with copies, to ensure not overwriting the POMDPs transition beliefs unless intended to
 		double[][][] transitionBeliefCurr = p.transitionBeliefCurr.clone();
@@ -280,28 +283,30 @@ public class DeltaIOTConnector {
 		nextstate = p.nextState(p.getCurrentState(), action);
 		p.setCurrentState(nextstate);
 		
-		// Calculate entropy of this new transition given the current belief
-		// set mote entropy
+		/// 1. CALCULATE PRIOR ENTROPY (uncertainty before observing the transition)
 		double priorEntropy = this.getMoteEntropy(action, nextstate);
 		this.entropy = priorEntropy;
 		
-		
+		/// 2. UPDATE TRANSITION BELIEFS based on the new observation
+		// This provides the information/data that will dictate a change in entropy of the system		
 		// update world probabilities by taking Expectation[transitionBeliefCurr] 
-		//// TODO HERE
 		this.updateTransitionBelief(action, nextstate);
 		// I've circumvented this by using the pseudo counts to just calculate instances of probabilities in the getTransitionProbability function when required
 		
+		/// 3. CALCULATE POSTERIOR ENTROPY
+		///double posteriorEntropy = this.getMoteEntropy(action, nextstate);
 		double posteriorEntropy = this.getMoteEntropy(action, nextstate);
 		this.mutualInformation = priorEntropy - posteriorEntropy;
 		
-		///Observation
+		/// 4. Observation belief + updates
 		int obs = p.getObservation(action, nextstate);
 		// Despite being called "Initial" belief, consider this the current belief
+		this.updateObservationBelief(action, nextstate, obs);
 		
 		BeliefPoint b = p.updateBelief(p.getInitialBelief(), action, obs); // CHANGE THIS ADAPTATION FOR THE SMILE RULE
 		
 		// Compute surprise here
-		
+		// Despite being called initialBelief, consider this the updated current belief for states
 		p.setInitialBelief(b);
 	
 		return 0;

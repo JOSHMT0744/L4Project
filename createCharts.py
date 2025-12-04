@@ -176,7 +176,7 @@ def misChart(df):
 
 def createCharts(df):
     # 1. Linechart for mean MIS over time (with error bounds)
-    """mis_fig = misChart(df)
+    mis_fig = misChart(df)
     mis_fig.show()
 
     # 2. Linechart for mean gamma over time
@@ -184,7 +184,7 @@ def createCharts(df):
     gamma_fig.show()
 
     surprises_fig = surpriseChart(df)
-    surprises_fig.show()"""
+    surprises_fig.show()
 
     satisfaction_fig = satisfactionPlots(df = df.filter(items=["timestep", "mecsattimestep", "rplsattimestep"]))
     satisfaction_fig.show()
@@ -219,7 +219,6 @@ def getData():
                     continue
                 df.columns = ["moteid", "timestep", file_col_name.lower()]
                 dfs_3.append(df)
-                #print(df.head(10))
             else:
                 df.columns = ["timestep", file_col_name]
                 dfs_2.append(df)
