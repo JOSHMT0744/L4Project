@@ -28,7 +28,7 @@
 -- Contains the RPL for the gateway after the update of each individual mote
 
 - `RPLSatProb.txt`
--- Probability that Reduction of packet loss has been satisfied (calculated by adding the belief states that match up to RPL = True)
+-- Probability that the Reduction of Packet Loss has been satisfied (calculated by adding the belief states that match up to RPL = True)
 
 - `RPLSattimestep.txt`
 -- Gateway QoS values at the end of updating every mote
@@ -54,4 +54,5 @@
 
 
 TODO
+
 - Evaluate MECSat and RPLSat grouped by each mote, to see which motes are contributing more strongly to extreme values
