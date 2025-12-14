@@ -52,7 +52,5 @@
 
 
 
-
 TODO
-
 - Evaluate MECSat and RPLSat grouped by each mote, to see which motes are contributing more strongly to extreme values
