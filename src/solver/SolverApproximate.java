@@ -18,6 +18,7 @@
 
 package solver;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -303,8 +304,10 @@ public class SolverApproximate implements Solver {
 		
 		System.out.println("Best Index:  "+bestindex);
 		System.out.println("Selected Action"+V.get(bestindex).getAction());
-		String outputFileAlpha = sp.getOutputDir()+"/"+pomdp.getInstanceName()+".alpha";
-		OutputFileWriter.dumpValueFunction(pomdp, V, outputFileAlpha, sp.dumpActionLabels());
+		// Use File constructor to properly join paths and handle absolute paths
+		File outputDir = new File(sp.getOutputDir());
+		File outputFile = new File(outputDir, pomdp.getInstanceName() + ".alpha");
+		OutputFileWriter.dumpValueFunction(pomdp, V, outputFile.getAbsolutePath(), sp.dumpActionLabels());
 		
 		return V;
 	}

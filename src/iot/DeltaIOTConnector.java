@@ -254,6 +254,7 @@ public class DeltaIOTConnector {
 		appendToFile("output_dir/gamma.txt", gamma, DeltaIOTConnector.selectedmote.getMoteid(), DeltaIOTConnector.timestep);
 		appendToFile("output_dir/surpriseCC.txt", Math.exp(logSurpriseCC), DeltaIOTConnector.selectedmote.getMoteid(), DeltaIOTConnector.timestep);
 		
+		
 		// varSMiLE updating of transitionBeliefCurr
 		// CHECK THIS. do we update all transitions, or just that of the next state
 		for (int stateIndex = 0; stateIndex < p.getNumStates(); stateIndex++) {

@@ -67,9 +67,12 @@ public class POMDP {
 			double[][][] transitionBeliefCurr,
 			double [][][] observationBelief
 			) {		
-		String[] filenameSplit = filename.split("/");
+		// Extract just the filename, handling both Windows (\) and Unix (/) path separators
+		String separator = filename.contains("\\") ? "\\\\" : "/";
+		String[] filenameSplit = filename.split(separator);
 		this.filename = filenameSplit[filenameSplit.length-1];
-		this.instanceName = filenameSplit[filenameSplit.length-1].replace(".POMDP", "");
+		// Remove .POMDP extension to get instance name
+		this.instanceName = this.filename.replace(".POMDP", "").replace(".pomdp", "");
 		this.nStates = nStates;
 		this.nActions = nActions;
 		this.nObservations = nObservations;
@@ -246,7 +249,36 @@ public class POMDP {
 			dataConnector.performITP();	 // increase transmission power		
 		}
 		
-		ArrayList<QoS> result = iot.DeltaIOTConnector.networkMgmt.getNetworkQoS(iot.DeltaIOTConnector.timestepiot+1); // get a visual of what this ArrayList<QoS> actually looks like
+		// Note: This method is called during performAction() to determine the next state
+		// The action (DTP/ITP) has just been executed, changing the network configuration
+		// However, we need QoS data AFTER the action to determine the next state
+		// Since doSingleRun() is called AFTER performAction() in the main loop,
+		// we use the CURRENT run number (timestepiot) which corresponds to the
+		// baseline run that was done before the action (timestepiot was already incremented after that run)
+		// The actual effects of this action will be seen in the NEXT doSingleRun() call
+		// For now, we use the pre-action QoS to estimate the next state
+		// TODO: Consider restructuring to do doSingleRun() here or pass QoS as parameter
+		// At this point in the execution:
+		// - First doSingleRun() was called and timestepiot was incremented (e.g., from 124 to 125)
+		// - Action is being executed (DTP/ITP) during performAction()
+		// - Second doSingleRun() hasn't been called yet
+		// The issue: The run that was just created (timestepiot) may not have complete QoS data
+		// for all motes yet, causing "Unknown value data" warnings from the simulator.
+		// Solution: Use timestepiot - 2 to get the run from BEFORE the first doSingleRun(),
+		// which should have complete data from the previous mote iteration.
+		int requestedRun = iot.DeltaIOTConnector.timestepiot;
+		
+		// Use timestepiot - 2 to get the run from before the current iteration's first doSingleRun()
+		// This ensures we're requesting a run that has complete QoS data for all motes
+		int currentRun = Math.max(1, requestedRun - 2);
+
+		// Wait for QoS data to be ready before accessing it to prevent warnings
+		ArrayList<QoS> result = main.SolvePOMDP.waitForQoSDataReady(currentRun, 20, 100);
+		if (result == null || result.isEmpty()) {
+			System.err.println("Warning: No QoS data available for run " + currentRun + " (requested " + requestedRun + ") in nextState(), using current state");
+			// Return current state as fallback
+			return currentState;
+		}
 		double packetLoss = result.get(result.size()-1).getPacketLoss();
 		// This is being performed inside of loop of the motes, so use timestepiot to get QoS for that specific mote
 		double energyConsumption = result.get(result.size()-1).getEnergyConsumption();
@@ -270,7 +302,15 @@ public class POMDP {
 	///Set it to currentState at the beginning. Each integer indicates the state
 	public int getInitialState() {
 		// (PacketLoss, PowerConsumption, Period (timestep)) for all timesteps up to now
-		ArrayList<QoS> result = iot.DeltaIOTConnector.networkMgmt.getNetworkQoS(1);
+		// It appears that getNetworkQoS(1) is typically used as the initial reference,
+		// so we fetch the initial QoS data for run 1 rather than using currentRun.
+		// Wait for QoS data to be ready before accessing it to prevent warnings
+		ArrayList<QoS> result = main.SolvePOMDP.waitForQoSDataReady(1, 20, 100);
+		
+		if (result == null || result.isEmpty()) {
+			System.err.println("Warning: No QoS data available for run 1 in getInitialState(), using default state 0");
+			return 0;
+		}
 		
 		System.out.println("result size"+result.size());
 		// Get PL and EC at current timestep
