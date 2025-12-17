@@ -56,7 +56,7 @@ public class SolverApproximate implements Solver {
 		B.add(pomdp.getInitialBelief());
 		Bset.add(pomdp.getInitialBelief());
 		
-		for(int run=0; run<sp.getBeliefSamplingRuns(); run++) {
+		for(int run = 0; run < sp.getBeliefSamplingRuns(); run++) {
 			BeliefPoint b = pomdp.getInitialBelief();
 			
 			for(int step=0; step<sp.getBeliefSamplingSteps(); step++) {

@@ -106,6 +106,111 @@ java -jar SolvePOMDP.jar
    - **Execute**: Applies action to the network
 4. **Post-processing**: Generates charts using Python script
 
+## Perseus Algorithm (Approximate Solver)
+
+The `SolverApproximate.java` class implements the **Perseus algorithm**, a point-based value iteration method for solving POMDPs. This is an approximate solver that is more computationally efficient than exact methods for large POMDPs.
+
+### Overview
+
+Perseus is a point-based value iteration algorithm that:
+- Samples a set of belief points from the belief space
+- Iteratively improves a value function over these points
+- Uses alpha vectors to represent the value function
+- Converges to an approximate optimal policy
+
+### Algorithm Walkthrough
+
+#### 1. **Belief Point Sampling** (`getBeliefPoints()`)
+
+The algorithm starts by generating a representative set of belief points:
+
+- **Initial Belief**: Adds the POMDP's initial belief state
+- **Random Trajectories**: For each sampling run:
+  - Starts from the initial belief
+  - For each step in the trajectory:
+    - Randomly selects an action
+    - Samples an observation based on the action-observation probability
+    - Updates the belief using Bayesian filtering: `b' = updateBelief(b, action, observation)`
+    - Adds the new belief point to the set (if not already present)
+- **Corner Beliefs**: Adds deterministic belief points where each state has probability 1.0 (one per state)
+
+This creates a diverse set of belief points that represent different regions of the belief space.
+
+#### 2. **Initialization** (`solve()`)
+
+The main solve method initializes:
+
+- **Value Function V**: Starts with one alpha vector per action, where each vector contains the immediate rewards for that action across all states
+- **Immediate Rewards**: Stores the reward vectors for each action (used in backup computations)
+
+#### 3. **Value Iteration Loop** (`backupStage()`)
+
+The algorithm iteratively improves the value function:
+
+**For each stage:**
+1. **Initialize gkao vectors**: Pre-computes intermediate vectors for all combinations of:
+   - Previous value vectors (k)
+   - Actions (a)
+   - Observations (o)
+   
+   These represent: `gkao[k][a][o][s] = Σ(s') P(o|s',a) * P(s'|s,a) * V[k][s']`
+
+2. **Backup Process**: While there are belief points that haven't been improved (`Btilde`):
+   - Randomly selects a belief point `b` from `Btilde`
+   - Computes `backup(b)` to get a new alpha vector
+   - If the new vector improves the value at `b`, adds it to `Vnext`
+   - Otherwise, keeps the best existing vector from `V`
+   - Updates `Btilde` to contain only belief points where the new value function hasn't improved
+
+3. **Convergence Check**: 
+   - Computes the maximum value difference across all belief points
+   - Stops when the difference is below tolerance OR time limit is exceeded
+
+#### 4. **Backup Computation** (`backup()`)
+
+For a given belief point `b`, computes the optimal alpha vector:
+
+1. **For each action `a`**:
+   - **For each observation `o`**: Finds the best gkao vector (the one maximizing dot product with `b`)
+   - **Sums observation vectors**: Combines all observation vectors for action `a`
+   - **Applies discount factor**: Multiplies by γ (discount factor)
+   - **Adds immediate reward**: Combines with the immediate reward vector for action `a`
+   - This gives: `ga[a] = R(a) + γ * Σ(o) max_k(gkao[k][a][o])`
+
+2. **Selects best action**: Finds the action vector `ga[a]` that maximizes the dot product with belief `b`
+
+3. **Returns**: The optimal alpha vector for belief point `b`
+
+#### 5. **Convergence** (`getValueDifference()`)
+
+Computes the maximum improvement across all belief points:
+- For each belief point, calculates: `Vnext(b) - V(b)`
+- Returns the maximum difference
+- Algorithm stops when this difference is below the tolerance threshold
+
+### Key Concepts
+
+- **Alpha Vectors**: Represent linear pieces of the value function. Each vector has one value per state and an associated action.
+- **Belief Points**: Probability distributions over states. The algorithm only evaluates the value function at sampled points rather than the entire continuous belief space.
+- **Point-Based Approach**: More efficient than exact methods because it focuses computation on reachable belief regions rather than the entire belief simplex.
+
+### Configuration Parameters
+
+The algorithm behavior is controlled by `solver.config`:
+- **Belief Sampling Runs**: Number of random trajectories to generate
+- **Belief Sampling Steps**: Length of each trajectory
+- **Value Function Tolerance**: Convergence threshold
+- **Time Limit**: Maximum computation time
+
+### Output
+
+The solver produces:
+- **Alpha Vectors**: Saved to `{domain}.alpha` file, representing the value function
+- **Expected Value**: The value at the initial belief state
+- **Selected Action**: The optimal action for the initial belief
+
+This approximate method trades exact optimality for computational efficiency, making it suitable for larger POMDPs where exact methods would be intractable.
+
 ## Output Files
 
 The program generates several output files in the `output_dir/` directory:

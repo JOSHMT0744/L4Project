@@ -441,7 +441,7 @@ public class SolvePOMDP {
 									double packetLoss = qosEntry.getPacketLoss();
 									double energyConsumption = qosEntry.getEnergyConsumption();
 									// If both values are exactly 1.0, this might be a default error value
-									if (packetLoss == 1.0 && energyConsumption == 1.0) {
+									if (packetLoss == 0.0 && energyConsumption == 0.0) {
 										hasWarnings = true; // Treat as warning indicator
 										break;
 									}
@@ -567,7 +567,7 @@ public class SolvePOMDP {
 		}
 		POMDP pomdp = PomdpParser.readPOMDP(pomdpFile.getAbsolutePath());
 		
-		int numTimesteps = 500;
+		int numTimesteps = 100;
 		// set alpha-vectors here (in future can have in POMDP file)
 		iot.DeltaIOTConnector.p=pomdp;
 		
@@ -597,21 +597,22 @@ public class SolvePOMDP {
 			 */
 			JsonObject obj =new JsonObject();
 			obj.put("timestep", timestep+"");
-		iot.DeltaIOTConnector.motes = iot.DeltaIOTConnector.networkMgmt.getProbe().getAllMotes();
-		System.out.println("motes recieved");
 
-		// For timestep 0, no runs exist yet, so use default state 0
-		// For timestep > 0, getInitialState() can safely access run 1 which exists from previous timesteps
-		int currState;
-		if (timestep == 0) {
-			// No runs exist yet at timestep 0, use default state
-			currState = 0;
-		} else {
-			// For timestep > 0, run 1 exists from previous timesteps, so we can safely call getInitialState()
-			currState = pomdp.getInitialState();
-		}
-		System.out.println("Initial state: "+currState);
-		pomdp.setCurrentState(currState);
+			iot.DeltaIOTConnector.motes = iot.DeltaIOTConnector.networkMgmt.getProbe().getAllMotes();
+			System.out.println("motes recieved");
+
+			// For timestep 0, no runs exist yet, so use default state 0
+			// For timestep > 0, getInitialState() can safely access run 1 which exists from previous timesteps
+			int currState;
+			if (timestep == 0) {
+				// No runs exist yet at timestep 0, use default state
+				currState = 0;
+			} else {
+				// For timestep > 0, run 1 exists from previous timesteps, so we can safely call getInitialState()
+				currState = pomdp.getInitialState();
+			}
+			System.out.println("Initial state: "+currState);
+			pomdp.setCurrentState(currState);
 			
 			System.out.println("current state: "+ pomdp.getCurrentState());		
 			
@@ -690,8 +691,8 @@ public class SolvePOMDP {
 					System.out.println("~~~~~~~~~~~~~~~~~~~~~~~");
 					double expectedvalue=V1.get(i).getDotProduct(pomdp.getInitialBelief().getBelief());
 					System.out.println("Expected Value: "+ expectedvalue);
-				
 				}
+
 				// Select the best alpha vector and its action
 				int bestindex = AlphaVector.getBestVectorIndex(pomdp.getInitialBelief().getBelief(), V1);
 				int selectedAction = V1.get(bestindex).getAction();
@@ -739,7 +740,6 @@ public class SolvePOMDP {
 				ByteArrayOutputStream errCapture2 = new ByteArrayOutputStream();
 				PrintStream outStream2 = new PrintStream(outCapture2, true);
 				PrintStream errStream2 = new PrintStream(errCapture2, true);
-				boolean hasWarnings2 = false;
 				try {
 					// Redirect streams BEFORE doSingleRun() to suppress warnings from appearing in console
 					System.setOut(outStream2);
@@ -747,46 +747,9 @@ public class SolvePOMDP {
 					iot.DeltaIOTConnector.networkMgmt.getSimulator().doSingleRun();
 					// Now the simulator has completed the next run. Increment timestepiot so it matches the latest run index.
 					iot.DeltaIOTConnector.timestepiot++;
-					
-					// Check if warnings were printed during doSingleRun()
-					String outOutput2 = outCapture2.toString();
-					String errOutput2 = errCapture2.toString();
-					hasWarnings2 = outOutput2.contains("Unknown value data") || errOutput2.contains("Unknown value data");
-					
-					// If warnings were detected during doSingleRun(), wait until they stop appearing
-					// Keep streams redirected during this period to suppress warnings from appearing in console
-					if (hasWarnings2) {
-						int retryCount = 0;
-						int maxRetries = 20;
-						long retryDelayMs = 50;
-						while (retryCount < maxRetries) {
-							try {
-								Thread.sleep(retryDelayMs);
-								// Clear previous capture and check if warnings still appear
-								outCapture2.reset();
-								errCapture2.reset();
-								// Access the run that was just created to check if warnings still appear
-								int currentRun = iot.DeltaIOTConnector.timestepiot;
-								DeltaIOTConnector.networkMgmt.getNetworkQoS(currentRun);
-								
-								// Check if warnings still appear
-								String outOutput3 = outCapture2.toString();
-								String errOutput3 = errCapture2.toString();
-								boolean stillHasWarnings = outOutput3.contains("Unknown value data") || errOutput3.contains("Unknown value data");
-								
-								if (!stillHasWarnings) {
-									// Warnings stopped - data is ready
-									break;
-								}
-								retryCount++;
-							} catch (InterruptedException e) {
-								Thread.currentThread().interrupt();
-								break;
-							}
-						}
-					}
 				} finally {
-					// Restore original streams only after doSingleRun() and waiting period are complete
+					// Restore original streams after doSingleRun() completes
+					// Note: waitForQoSDataReady() below will handle validation and any additional waiting needed
 					System.setOut(originalOut2);
 					System.setErr(originalErr2);
 				}
@@ -803,7 +766,7 @@ public class SolvePOMDP {
 				}
 				
 				// Wait for QoS data to be ready before accessing it to prevent warnings
-				ArrayList<QoS> result = waitForQoSDataReady(currentRun, 20, 100);
+				ArrayList<QoS> result = waitForQoSDataReady(currentRun, 10, 100);
 				if (result == null || result.isEmpty()) {
 					System.err.println("Warning: No QoS data available for run " + currentRun + ". Using defaults.");
 					System.err.println("Timestep: " + timestep + ", Mote: " + moteIndex + ", timestepiot: " + iot.DeltaIOTConnector.timestepiot);
