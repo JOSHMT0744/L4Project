@@ -48,6 +48,8 @@ import pomdp.SolverProperties;
 import simulator.QoS;
 import solver.AlphaVector;
 import solver.BeliefPoint;
+import solver.ERPBVI;
+import solver.EntropyRegularizedPolicy;
 import solver.Solver;
 import solver.SolverApproximate;
 
@@ -251,7 +253,7 @@ public class SolvePOMDP {
 		sp.setValueFunctionTolerance(Double.parseDouble(getPropertyOrThrow(properties, "valueFunctionTolerance")));
 
 		// Error checking solver.config parameters
-		if(!algorithmType.equals("perseus") && !algorithmType.equals("gip")) {
+		if(!algorithmType.equals("perseus") && !algorithmType.equals("gip") && !algorithmType.equals("erpbvi")) {
 			throw new RuntimeException("Unexpected algorithm type in properties file");
 		}
 		
@@ -287,6 +289,11 @@ public class SolvePOMDP {
 				throw new RuntimeException("GIP is not supported");
 			case "perseus":
 				this.solver = new SolverApproximate(sp, new Random(222));
+				break;
+			case "erpbvi":
+				// Entropy-Regularized PBVI with default parameters
+				// maxIterations=10, epsilon=0.1, lambda=1.0, verbose=false (set true for profiling)
+				this.solver = new ERPBVI(sp, new Random(222), 10, 0.1, 1.0, false);
 				break;
 			default:
 				throw new RuntimeException("Unexpected algorithm type in properties file");
@@ -693,11 +700,14 @@ public class SolvePOMDP {
 					System.out.println("Expected Value: "+ expectedvalue);
 				}
 
-				// Select the best alpha vector and its action
+				// Select action based on solver type
+				int selectedAction;
+
+				// Standard action selection for other solvers
 				int bestindex = AlphaVector.getBestVectorIndex(pomdp.getInitialBelief().getBelief(), V1);
-				int selectedAction = V1.get(bestindex).getAction();
+				selectedAction = V1.get(bestindex).getAction();
 				System.out.println("Selected Action: " + selectedAction);
-				
+			
 				// Put knowledge update here?
 				// Really, want this function in the deltaiotconnector, as we want it triggered before belief is updated. 
 				// Otherwise, we are comparing the posterior belief rather than the prior

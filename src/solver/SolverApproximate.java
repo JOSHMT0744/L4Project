@@ -59,13 +59,13 @@ public class SolverApproximate implements Solver {
 		for(int run = 0; run < sp.getBeliefSamplingRuns(); run++) {
 			BeliefPoint b = pomdp.getInitialBelief();
 			
-			for(int step=0; step<sp.getBeliefSamplingSteps(); step++) {
+			for(int step = 0; step < sp.getBeliefSamplingSteps(); step++) {
 				pomdp.prepareBelief(b);
 				
 				// select action and observation
 				int action = rnd.nextInt(pomdp.getNumActions());
 				ProbabilitySample ps = new ProbabilitySample(rnd);
-				for(int o=0; o<pomdp.getNumObservations(); o++) {
+				for(int o = 0; o < pomdp.getNumObservations(); o++) {
 					double prob = b.getActionObservationProbability(action, o);
 					if(prob > 1.0) prob = 1.0;
 					ps.addItem(o, prob);
@@ -90,7 +90,7 @@ public class SolverApproximate implements Solver {
 		}
 		
 		// add corner beliefs
-		for(int s=0; s<pomdp.getNumStates(); s++) {
+		for(int s = 0; s < pomdp.getNumStates(); s++) {
 			double[] beliefEntries = new double[pomdp.getNumStates()];
 			beliefEntries[s] = 1.0;
 			B.add(new BeliefPoint(beliefEntries));
@@ -254,14 +254,16 @@ public class SolverApproximate implements Solver {
 		ArrayList<AlphaVector> V = new ArrayList<AlphaVector>();
 		ArrayList<AlphaVector> immediateRewards = new ArrayList<AlphaVector>();
 		
-		for(int a=0; a<nActions; a++) {
+		for(int a = 0; a < nActions; a++) {
+			// entires stores the rewards for each state for current action based on the reward function
 			double[] entries = new double[nStates];
-			for(int s=0; s<nStates; s++) {
+			for(int s = 0; s < nStates; s++) {
 				entries[s] = pomdp.getReward(s, a);
 			}
 			AlphaVector av = new AlphaVector(entries);
 			av.setAction(a);
 			V.add(av);
+			// immediateRewards is a list of AlphaVectors, each representing the immediate rewards for a given action
 			immediateRewards.add(av);
 		}
 		
@@ -277,10 +279,12 @@ public class SolverApproximate implements Solver {
 			stage++;
 			
 			ArrayList<AlphaVector> Vnext = backupStage(pomdp, immediateRewards, V, B);
+			// Vnext is the new value function after the backup stage
 			double valueDifference = getValueDifference(B, V, Vnext);
 			double elapsed = (System.currentTimeMillis() - startTime) * 0.001;
 			//System.out.println("Stage "+stage+": "+Vnext.size()+" vectors, diff "+valueDifference+", time elapsed "+elapsed+" sec");
 			
+			// V is updated to the new value function
 			V = Vnext;
 			
 			//OutputFileWriter.dumpValueFunction(pomdp, V, sp.getOutputDir()+"/"+pomdp.getInstanceName()+".alpha"+stage, sp.dumpActionLabels());
