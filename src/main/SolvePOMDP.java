@@ -49,7 +49,6 @@ import simulator.QoS;
 import solver.AlphaVector;
 import solver.BeliefPoint;
 import solver.ERPBVI;
-import solver.EntropyRegularizedPolicy;
 import solver.Solver;
 import solver.SolverApproximate;
 
@@ -292,8 +291,7 @@ public class SolvePOMDP {
 				break;
 			case "erpbvi":
 				// Entropy-Regularized PBVI with default parameters
-				// maxIterations=10, epsilon=0.1, lambda=1.0, verbose=false (set true for profiling)
-				this.solver = new ERPBVI(sp, new Random(222), 10, 0.1, 1.0, false);
+				this.solver = new ERPBVI(sp, new Random(222), 0.1, 1.0, false);
 				break;
 			default:
 				throw new RuntimeException("Unexpected algorithm type in properties file");

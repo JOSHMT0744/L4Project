@@ -22,7 +22,6 @@ import pomdp.SolverProperties;
  */
 public class ERPBVI implements Solver {
     
-    private int maxIterations;
     private double epsilon;
     private double lambda;  // temperature parameter
     private boolean verbose;
@@ -43,14 +42,12 @@ public class ERPBVI implements Solver {
     private int backupCount = 0;
     
     public ERPBVI(SolverProperties solverProperties, Random rnd) {
-        this(solverProperties, rnd, 10, 0.1, 1.0, false);
+        this(solverProperties, rnd, 0.1, 1.0, false);
     }
     
-    public ERPBVI(SolverProperties solverProperties, Random rnd, 
-                  int maxIterations, double epsilon, double lambda, boolean verbose) {
+    public ERPBVI(SolverProperties solverProperties, Random rnd, double epsilon, double lambda, boolean verbose) {
         this.sp = solverProperties;
         this.rnd = rnd;
-        this.maxIterations = maxIterations;
         this.epsilon = epsilon;
         this.lambda = lambda;
         this.verbose = verbose;
@@ -265,9 +262,8 @@ public class ERPBVI implements Solver {
      * Now has a safeguard: maxInnerIterations to avoid infinite loops.
      */
     private void improve(POMDP pomdp, List<BeliefPoint> B) {
-        final int maxInnerIterations = 1000; // safeguard to prevent infinite loops
-        int iter = 0;
-        while (iter < maxInnerIterations) {
+        long startTime = System.currentTimeMillis();
+        while (true) {
             // Store old values for convergence check
             List<List<AlphaVector>> XiOld = new ArrayList<>();
             for (List<AlphaVector> Gamma : Xi) {
@@ -290,17 +286,14 @@ public class ERPBVI implements Solver {
                 }
             }
 
+            double elapsedTime = (System.currentTimeMillis() - startTime) * 0.001;
             if (verbose) {
-                System.out.println("    Improving alphas, maximum gap: " + maxGap + " (iteration " + (iter+1) + ")");
+                System.out.println("    Improving alphas, maximum gap: " + maxGap + " (time elapsed " + elapsedTime + " seconds)");
             }
 
-            if (maxGap <= epsilon) {
+            if (maxGap <= epsilon || elapsedTime > sp.getTimeLimit()) {
                 break;
             }
-            iter++;
-        }
-        if (iter == maxInnerIterations && verbose) {
-            System.out.println("    Warning: Reached max inner improvement iterations (" + maxInnerIterations + ")");
         }
     }
     
@@ -329,37 +322,35 @@ public class ERPBVI implements Solver {
     /**
      * Expand belief set with successor beliefs
      */
-    private List<BeliefPoint> expand(POMDP pomdp, List<BeliefPoint> B, Set<String> Bset) {
+    private List<BeliefPoint> expand(POMDP pomdp, List<BeliefPoint> B, Set<BeliefPoint> Bset) {
         List<BeliefPoint> BNew = new ArrayList<>(B);
         
         for (BeliefPoint b : B) {
             // Find most distant successor
             double maxDist = -1;
-            double[] bestSucc = null;
+            BeliefPoint bestSuccPoint = null;
             
             for (int a = 0; a < pomdp.getNumActions(); a++) {
                 for (int o = 0; o < pomdp.getNumObservations(); o++) {
                     BeliefPoint bPrimePoint = pomdp.updateBelief(b, a, o);
-                    double[] bPrime = (bPrimePoint != null) ? bPrimePoint.getBelief() : null;
                     
-                    if (bPrime != null) {
-                        String key = beliefKey(bPrime);
-                        if (!Bset.contains(key)) {
+                    if (bPrimePoint != null) {
+                        if (!Bset.contains(bPrimePoint)) {
                             // Compute distance to existing beliefs
-                            double dist = computeMinDistance(bPrime, B);
+                            double dist = computeMinDistance(bPrimePoint.getBelief(), B);
                             if (dist > maxDist) {
                                 maxDist = dist;
-                                bestSucc = bPrime;
+                                bestSuccPoint = bPrimePoint;
                             }
                         }
                     }
                 }
             }
             
-            if (bestSucc != null) {
-                BeliefPoint newBelief = new BeliefPoint(bestSucc);
+            if (bestSuccPoint != null) {
+                BeliefPoint newBelief = new BeliefPoint(bestSuccPoint.getBelief());
                 BNew.add(newBelief);
-                Bset.add(beliefKey(bestSucc));
+                Bset.add(newBelief);
             }
         }
         
@@ -423,25 +414,26 @@ public class ERPBVI implements Solver {
         System.out.println();
         System.out.println("=== RUN ERPBVI SOLVER ===");
         System.out.println("Algorithm: Entropy-Regularized Point-Based Value Iteration");
-        System.out.println("Parameters: maxIterations=" + maxIterations + 
-                          ", epsilon=" + epsilon + ", lambda=" + lambda);
+        System.out.println("Parameters: beliefSamplingRuns=" + sp.getBeliefSamplingRuns() + 
+                          ", beliefSamplingSteps=" + sp.getBeliefSamplingSteps() + 
+                          ", epsilon=" + epsilon + 
+                          ", lambda=" + lambda +
+                          ", verbose=" + verbose);
         
         // Initialize beliefs: B ← {b0}
-        List<BeliefPoint> B = new ArrayList<>();
-        Set<String> Bset = new HashSet<>();
-        BeliefPoint b0 = pomdp.getInitialBelief();
-        B.add(b0);
-        Bset.add(beliefKey(b0.getBelief()));
+        List<BeliefPoint> B = new ArrayList<BeliefPoint>();
+        Set<BeliefPoint> Bset = new HashSet<BeliefPoint>();
+        B.add(pomdp.getInitialBelief());
+        Bset.add(pomdp.getInitialBelief());
         
         // Add corner beliefs
         for (int s = 0; s < nStates; s++) {
             double[] corner = new double[nStates];
             corner[s] = 1.0;
             BeliefPoint cornerBelief = new BeliefPoint(corner);
-            String key = beliefKey(corner);
-            if (!Bset.contains(key)) {
+            if (!Bset.contains(cornerBelief)) {
                 B.add(cornerBelief);
-                Bset.add(key);
+                Bset.add(cornerBelief);
             }
         }
         
@@ -479,7 +471,7 @@ public class ERPBVI implements Solver {
         long startTime = System.currentTimeMillis();
         int prevSize = B.size();
         
-        for (int i = 1; i <= maxIterations; i++) {
+        for (int i = 1; i <= sp.getBeliefSamplingRuns(); i++) {
             // Improve
             improve(pomdp, B);
             
@@ -511,7 +503,7 @@ public class ERPBVI implements Solver {
             allAlphas.addAll(Gamma);
         }
         
-        expectedValue = AlphaVector.getValue(b0.getBelief(), allAlphas);
+        expectedValue = AlphaVector.getValue(pomdp.getInitialBelief().getBelief(), allAlphas);
         
         System.out.println("Solve time: " + getTotalSolveTime() + " seconds");
         System.out.println("Total alpha vectors: " + allAlphas.size());
