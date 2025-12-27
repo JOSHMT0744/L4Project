@@ -109,7 +109,7 @@ def surpriseChart(df):
 
     fig.add_trace(go.Scatter(
         x=df["timestep"],
-        y=df["meanmis"],
+        y=df["surprisemis"],
         mode="lines",
         name="Mean MIS",
     ))
@@ -143,13 +143,13 @@ def misChart(df):
     fig = go.Figure(
         data=go.Scatter(
             x=df["timestep"],
-            y=df["meanmis"],
+            y=df["surprisemis"],
             mode="lines",
             name="System Mean MIS",
         )
     )
 
-    fig.add_trace(go.Scatter(
+    """fig.add_trace(go.Scatter(
         x=df["timestep"],
         y=df["mis_upper"],
         mode="lines",
@@ -165,7 +165,7 @@ def misChart(df):
         name="MIS Lower Bound",
         line=dict(color='red',
                   width=1),
-    ))
+    ))"""
 
     fig.update_layout(
         title="Mean MIS Over Time with Error Bounds",
@@ -209,7 +209,15 @@ def getData():
         if os.path.isfile(file_path):
             if file_path == "output_dir\\IoT.alpha" or file_path == "output_dir\\SelectedAction.txt":
                 continue
-            df = pd.read_csv(file_path, sep=r"\s+", header=None)
+            # Skip empty files to avoid EmptyDataError
+            if os.path.getsize(file_path) == 0:
+                print(f"Warning: Skipping empty file: {filename}")
+                continue
+            try:
+                df = pd.read_csv(file_path, sep=r"\s+", header=None)
+            except pd.errors.EmptyDataError:
+                print(f"Warning: Skipping empty file: {filename}")
+                continue
             
             file_col_name = filename.split('.')[0].lower()
             if df.shape[1] == 3:

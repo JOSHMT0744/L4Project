@@ -19,7 +19,6 @@
 package main;
 
 import java.io.BufferedReader;
-import java.io.BufferedWriter;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
@@ -42,13 +41,12 @@ import deltaiot.client.SimulationClient;
 import deltaiot.services.Mote;
 import iot.DeltaIOTConnector;
 import pomdp.POMDP;
-//import pomdp.Parser;
 import pomdp.PomdpParser;
 import pomdp.SolverProperties;
 import simulator.QoS;
 import solver.AlphaVector;
 import solver.BeliefPoint;
-import solver.ERPBVI;
+import solver.ERPBVI;	
 import solver.Solver;
 import solver.SolverApproximate;
 
@@ -291,7 +289,7 @@ public class SolvePOMDP {
 				break;
 			case "erpbvi":
 				// Entropy-Regularized PBVI with default parameters
-				this.solver = new ERPBVI(sp, new Random(222), 0.1, 1.0, false);
+				this.solver = new ERPBVI(sp, new Random(222), 0.5, false);
 				break;
 			default:
 				throw new RuntimeException("Unexpected algorithm type in properties file");
@@ -572,29 +570,26 @@ public class SolvePOMDP {
 		}
 		POMDP pomdp = PomdpParser.readPOMDP(pomdpFile.getAbsolutePath());
 		
-		int numTimesteps = 100;
+		int numTimesteps = 200;
 		// set alpha-vectors here (in future can have in POMDP file)
-		iot.DeltaIOTConnector.p=pomdp;
-		
-		// list to record entropys
-		double[] entropies = new double[numTimesteps];
-		double[] mutualInformations = new double[numTimesteps];
-			
+		iot.DeltaIOTConnector.p=pomdp;		
 		
 		////////IoT Code///////////
 		
-		//iot.DeltaIOTConnector.timestepiot=timestep;
-		//System.out.println("timestep: "+timestep);
 		iot.DeltaIOTConnector.networkMgmt = new SimulationClient();
 		
 		iot.DeltaIOTConnector deltaConnector = new iot.DeltaIOTConnector();
 		deltaConnector.clearFile("output_dir/gamma.txt");
 		deltaConnector.clearFile("output_dir/surpriseBF.txt");
 		deltaConnector.clearFile("output_dir/surpriseCC.txt");
+		deltaConnector.clearFile("output_dir/surpriseMIS.txt");
+
 		// Initialize timestepiot to 0. This tracks the run number for QoS retrieval.
 		// The simulator uses 1-indexed run numbers, so run number = timestepiot + 1
 		// After each doSingleRun(), timestepiot is incremented to match the created run
 		iot.DeltaIOTConnector.timestepiot = 0;
+		// set surprise measure for gamma calculation
+		deltaConnector.setSurpriseMeasureForGamma("MIS");
 		
 		for (int timestep = 0; timestep < numTimesteps; timestep++) {
 			/*
@@ -796,12 +791,7 @@ public class SolvePOMDP {
 			 	} else {
 			 		System.err.println("Warning: Using default QoS values (packetLoss=0.0, energyConsumption=0.0)");
 			 	}
-			 	// Get calculating entropy of current mote's transition belief given previous action and state movement
-			 	double entropy = deltaConnector.getMoteEntropy();
-			 	double mutualInformation = deltaConnector.getMoteMI();
-			 	entropies[timestep] += entropy;
-			 	mutualInformations[timestep] += mutualInformation;
-			 	System.out.println("packet loss: "+packetLoss+"   Energy Consumption: "+energyConsumption+"   Entropy: "+entropy+"   Mutual Information: "+mutualInformation);
+			 	System.out.println("packet loss: "+packetLoss+"   Energy Consumption: "+energyConsumption);
 			 	
 			 	pwMECSat.println(moteIndex+" "+timestep+" "+energyConsumption);
 			 	pwRPLSat.println(moteIndex+" "+timestep+" "+packetLoss);
@@ -838,60 +828,8 @@ public class SolvePOMDP {
 			pwMECSattimestep.flush();
 			pwRPLSattimestep.flush();
 			
-			// Writing entropy values to file
-			try (BufferedWriter writer = new BufferedWriter(new FileWriter("output_dir/entropy.txt"))) {
-				for (int i = 0; i < entropies.length; i++) {
-					writer.write(Integer.toString(i)+" "+Double.toString(entropies[i]));
-					writer.newLine();
-				}
-			}
-			try (BufferedWriter writer = new BufferedWriter(new FileWriter("output_dir/mutualInformation.txt"))) {
-				for (int i = 0; i < mutualInformations.length; i++) {
-					writer.write(Integer.toString(i)+" "+Double.toString(mutualInformations[i]));
-					writer.newLine();
-				}
-			}
 			iot.DeltaIOTConnector.timestep++;
 		}
-		
-		// Mutual information surprise (MIS)
-		double[] mis = new double[mutualInformations.length];
-		mis[0] = 0; 
-		mis[1] = 0;
-		int lookback = 2; // m
-		double significanceLevel = 0.99;
-		
-		double miBound;
-		double[] misBound = new double[2];
-		
-		// Calculate MIS
-		for (int i = lookback; i < mutualInformations.length; i++) {
-			// MI is calculated as a sum over all motes
-			// to scale down (for compatability with bound), take mean MI across the system
-			mis[i] = (mutualInformations[i] - mutualInformations[i - lookback]) / iot.DeltaIOTConnector.motes.size();
-			
-			// Calculate MIS bound (with probability at least 1- significanceLevel) at each timestep
-			miBound = (Math.sqrt(2 * lookback * Math.log(2.0 / significanceLevel)) * Math.log(lookback + i)) / (lookback + i);
-			misBound[0] = (Math.log(lookback + i) - Math.log(i)) - miBound;
-			misBound[1] = (Math.log(lookback + i) - Math.log(i)) + miBound;
-		}
-		
-		try (BufferedWriter writer = new BufferedWriter(new FileWriter("output_dir/meanMIS.txt"))) {
-			for (int i = lookback; i < mutualInformations.length; i++) {
-				writer.write(Integer.toString(i)+" "+Double.toString(mis[i]));
-				writer.newLine();
-			}
-		}	
-
-		
-		try (BufferedWriter writer = new BufferedWriter(new FileWriter("output_dir/misBounds.txt"))) {
-			for (int i = lookback; i < mutualInformations.length; i++) {
-				writer.write(Integer.toString(i)+" "+Double.toString(misBound[0])+" "+Double.toString(misBound[1]));
-				writer.newLine();
-			}
-		}
-		
-		// Resources will be closed in finally block
 		
 		// print results
 		// Use File constructor to properly join paths and handle absolute paths
@@ -948,6 +886,8 @@ public class SolvePOMDP {
 	 * @param args first argument should be a filename of a .POMDP file
 	 */
 	public static void main(String[] args) {	
+		long startTime = System.currentTimeMillis();
+		
 		System.out.println("SolvePOMDP v0.0.3");
 		System.out.println("Author: Erwin Walraven");
 		System.out.println("Web: erwinwalraven.nl/solvepomdp");
@@ -961,6 +901,14 @@ public class SolvePOMDP {
 		
 		SolvePOMDP ps = new SolvePOMDP();
 		ps.run("IoT.POMDP");
+
+		long endTime = System.currentTimeMillis();
+		long totalTime = endTime - startTime;
+		double totalTimeSeconds = totalTime / 1000.0;
+		System.out.println();
+		System.out.println("========================================");
+		System.out.println("Total execution time: " + String.format("%.2f", totalTimeSeconds) + " seconds");
+		System.out.println("========================================");
 
 		try {
 			runPython();

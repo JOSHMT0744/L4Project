@@ -225,8 +225,8 @@ public class PomdpParser {
 		for (int stateIndex = 0; stateIndex < numStates; stateIndex++) {
 			for (int actionIndex = 0; actionIndex < numActions; actionIndex++) {
 				System.arraycopy(transitionFunction[stateIndex][actionIndex], 0, transitionBeliefCurr[stateIndex][actionIndex], 0, numStates);
-				//Arrays.fill(transitionBeliefCurr[stateIndex][actionIndex], 1.0);
-				Arrays.fill(transitionBeliefReset[stateIndex][actionIndex], 1.0); // / Double.valueOf(numStates));
+				Arrays.fill(transitionBeliefCurr[stateIndex][actionIndex], 1.0);
+				Arrays.fill(transitionBeliefReset[stateIndex][actionIndex], 1.0);
 			}
 		}
 		
@@ -238,14 +238,14 @@ public class PomdpParser {
 		}
 
 		 // As each value of transition belief is initially a probability, adjust this to be a minimum of 1, and scale all other values accordingly
-		 for (int stateIndex = 0; stateIndex < numStates; stateIndex++) {
-				for (int actionIndex = 0; actionIndex < numActions; actionIndex++) {
-					double alphaMin = Arrays.stream(transitionBeliefCurr[stateIndex][actionIndex]).min().getAsDouble();
-					for (int nextStateIndex = 0; nextStateIndex < numStates; nextStateIndex++) {
-						transitionBeliefCurr[stateIndex][actionIndex][nextStateIndex] = transitionBeliefCurr[stateIndex][actionIndex][nextStateIndex] * Double.valueOf(2*numStates);
-					}
-				}
-			}
+		//  for (int stateIndex = 0; stateIndex < numStates; stateIndex++) {
+		// 		for (int actionIndex = 0; actionIndex < numActions; actionIndex++) {
+		// 			double alphaMin = Arrays.stream(transitionBeliefCurr[stateIndex][actionIndex]).min().getAsDouble();
+		// 			for (int nextStateIndex = 0; nextStateIndex < numStates; nextStateIndex++) {
+		// 				transitionBeliefCurr[stateIndex][actionIndex][nextStateIndex] = transitionBeliefCurr[stateIndex][actionIndex][nextStateIndex] * Double.valueOf(2*numStates);
+		// 			}
+		// 		}
+		// 	}
 
 		 
 		 System.out.println("Starting transition curr belief: ");

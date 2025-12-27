@@ -22,7 +22,6 @@ import pomdp.SolverProperties;
  */
 public class ERPBVI implements Solver {
     
-    private double epsilon;
     private double lambda;  // temperature parameter
     private boolean verbose;
     
@@ -42,13 +41,12 @@ public class ERPBVI implements Solver {
     private int backupCount = 0;
     
     public ERPBVI(SolverProperties solverProperties, Random rnd) {
-        this(solverProperties, rnd, 0.1, 1.0, false);
+        this(solverProperties, rnd, 100, false);
     }
     
-    public ERPBVI(SolverProperties solverProperties, Random rnd, double epsilon, double lambda, boolean verbose) {
+    public ERPBVI(SolverProperties solverProperties, Random rnd, double lambda, boolean verbose) {
         this.sp = solverProperties;
         this.rnd = rnd;
-        this.epsilon = epsilon;
         this.lambda = lambda;
         this.verbose = verbose;
     }
@@ -149,6 +147,23 @@ public class ERPBVI implements Solver {
     /**
      * Backup a single belief point (Algorithm 3)
      * Appends new alpha vector to each Q-function Ξ[a]
+     */
+    /**
+     * In the ERPBVI backup, lambda controls policy stochasticity:
+     *   - Large lambda: more stochastic, encourages exploration; weights in softmax are more uniform.
+     *   - Small lambda: more deterministic/greedy, selects the action(s) with highest expected value.
+     * 
+     * Since the POMDP model is only an approximation of reality and our beliefs may be incorrect or evolve,
+     * using *some* stochasticity (larger lambda) can be valuable. It encourages exploration and helps prevent
+     * the algorithm from committing too early to suboptimal actions based on limited or imperfect knowledge.
+     * This, in turn, enables better updating of our POMDP beliefs as more observations are made.
+     * 
+     * If you always choose the best action (lambda→0), you risk premature convergence and less robust belief updates.
+     * A moderate lambda (not too small, not too large) is typically best, balancing exploitation and exploration.
+     * 
+     * You can start with a value such as lambda=1.0 or higher, and tune it based on empirical performance.
+     * 
+     * -- backup procedure remains as before --
      */
     private void backup(POMDP pomdp, BeliefPoint b) {
         int nStates = pomdp.getNumStates();
@@ -291,7 +306,7 @@ public class ERPBVI implements Solver {
                 System.out.println("    Improving alphas, maximum gap: " + maxGap + " (time elapsed " + elapsedTime + " seconds)");
             }
 
-            if (maxGap <= epsilon || elapsedTime > sp.getTimeLimit()) {
+            if (maxGap <= sp.getValueFunctionTolerance() || elapsedTime > sp.getTimeLimit()) {
                 break;
             }
         }
@@ -416,7 +431,7 @@ public class ERPBVI implements Solver {
         System.out.println("Algorithm: Entropy-Regularized Point-Based Value Iteration");
         System.out.println("Parameters: beliefSamplingRuns=" + sp.getBeliefSamplingRuns() + 
                           ", beliefSamplingSteps=" + sp.getBeliefSamplingSteps() + 
-                          ", epsilon=" + epsilon + 
+                          ", epsilon=" + sp.getValueFunctionTolerance() + 
                           ", lambda=" + lambda +
                           ", verbose=" + verbose);
         

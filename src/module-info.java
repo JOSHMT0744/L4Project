@@ -24,4 +24,5 @@ module L4Project {
 	requires org.jfree.jfreechart;
 	requires java.desktop;
 	requires commons.math3;
+    requires org.python.jython2.standalone;
 }

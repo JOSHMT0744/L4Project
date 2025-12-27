@@ -5,8 +5,10 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 
 import deltaiot.client.SimulationClient;
 import deltaiot.services.Link;
@@ -16,6 +18,8 @@ import pomdp.POMDP;
 import solver.BeliefPoint;
 
 import org.apache.commons.math3.special.Gamma;
+
+// TODO: use polarity of MIS surprise as an explainer of the learning behaviour of the agent
 
 /**
  * The connector between the Simulator and the MAPE-K loop
@@ -39,15 +43,19 @@ public class DeltaIOTConnector {
 	public static Integer moteids[];
 	public int selectedindex;
 	
-	public double entropy;
-	public double mutualInformation;
 	private double eps;
+	
+	// History of mutual information values per mote for MIS calculation
+	private Map<Integer, ArrayList<Double>> miHistory;
+	private int lookback = 4; // m - lookback period for MIS calculation
+	
+	// Surprise measure to use for gamma calculation: "CC" (Confidence-Corrected), "BF" (Bayes Factor), or "MIS" (Mutual Information Surprise)
+	private String surpriseMeasureForGamma = "CC"; // Default to Confidence-Corrected Surprise
 	
 	public DeltaIOTConnector() {
 		selectedindex=0;
-		entropy = 0.0;
-		mutualInformation = 0.0;
 		eps = 1e-300; // prevent underflow
+		miHistory = new HashMap<Integer, ArrayList<Double>>();
 		//stopwatchiot = StopWatch.getGlobalStopWatch();		
 	}
 	
@@ -84,20 +92,32 @@ public class DeltaIOTConnector {
 		return 0;
 	}
 	
-	public double getMoteEntropy() {
-		System.out.println("Transition function belief: mote no: "+DeltaIOTConnector.selectedmote.getMoteid());
-		return this.entropy;
+	/**
+	 * Set which surprise measure to use for gamma calculation
+	 * @param measure "CC" for Confidence-Corrected Surprise, "BF" for Bayes Factor Surprise, or "MIS" for Mutual Information Surprise
+	 */
+	public void setSurpriseMeasureForGamma(String measure) {
+		if (measure.equals("CC") || measure.equals("BF") || measure.equals("MIS")) {
+			this.surpriseMeasureForGamma = measure;
+		} else {
+			System.err.println("Warning: Invalid surprise measure '" + measure + "'. Use 'CC', 'BF', or 'MIS'. Keeping current: " + this.surpriseMeasureForGamma);
+		}
 	}
 	
-	public double getMoteMI() {
-		System.out.println("Transition function belief: mote no: "+DeltaIOTConnector.selectedmote.getMoteid());
-		return this.mutualInformation;
+	/**
+	 * Get the current surprise measure used for gamma calculation
+	 * @return "CC", "BF", or "MIS"
+	 */
+	public String getSurpriseMeasureForGamma() {
+		return this.surpriseMeasureForGamma;
 	}
 	
 	private double confidenceCorrectedSurprise(double[][][] transitionBelief, double[][][] transitionBeliefReset, int action, int nextstate) {
-		// For each belief state, calculate the surpriseCC for going to next state
-		// calculated using KL(Dir(curr || reset)
-		// Then do weighted sum of all these surprises
+		// Implements SCC1(yt+1|xt+1; π(t)) := DKL[π(t)||πflat(.|yt+1, xt+1)] from "A taxonomy of surprise definitions" (2022)
+		// For each possible current state, calculate KL divergence between:
+		// - π(t): current transition belief (BEFORE update) 
+		// - πflat(.|yt+1, xt+1): flat prior updated with new observation
+		// Then compute weighted sum over current states (for POMDP uncertainty)
 		int numStates = p.getNumStates();
 		double surpriseCC = 0.0;
 		
@@ -128,7 +148,7 @@ public class DeltaIOTConnector {
 		return surpriseCC;
 	}
 	
-	private double[] getLogPredeProbs(double[][][] transitionBelief, int action, int nextstate) {
+	private double[] getLogPredProbs(double[][][] transitionBelief, int action, int nextstate) {
 		// Calculate belief pseudo-counts for all possible next states, and then for the specifically chosen next state
 		// Use sum over rows as a normaliser so probability is in [0,1]
 		double[] logPred  = new double[p.getNumStates()];
@@ -144,6 +164,38 @@ public class DeltaIOTConnector {
 		}
 		
 		return logPred;
+	}
+	
+	/**
+	 * Calculates the Bayes Factor Surprise for a given action and observed next state.
+	 * This is defined as the log ratio of the predicted probability of the observed next state
+	 * under the *reset* (flat) prior and the *current* belief. 
+	 * Both probabilities are computed by marginalizing over all current states, weighted by the current belief.
+	 *
+	 * @param transitionBeliefCurr   Current Dirichlet pseudo-counts Belief[state][action][nextstate]
+	 * @param transitionBeliefReset  Flat (reset) Dirichlet pseudo-counts Belief[state][action][nextstate]
+	 * @param action                 The action taken
+	 * @param nextstate              The observed next state
+	 * @return                       The Bayes Factor surprise value for this transition
+	 */
+	private double bayesFactorSurprise(double[][][] transitionBeliefCurr, double[][][] transitionBeliefReset, int action, int nextstate) {
+		// Calculating the probability of moving to nextstate, weighted by the current belief state, for each current belief state
+		double[] logPredProbCurrVals = this.getLogPredProbs(transitionBeliefCurr, action, nextstate);
+		double predProbCurr = 0;
+		for (int currState = 0; currState < p.getNumStates(); currState++) {
+			predProbCurr += p.getInitialBelief().getBelief(currState) * Math.exp(logPredProbCurrVals[currState]);
+		}
+		assert predProbCurr >= 0 && predProbCurr <= 1;
+		
+		double[] logPredProbResetVals = this.getLogPredProbs(transitionBeliefReset, action, nextstate);
+		double predProbReset = 0;
+		for (int currState = 0; currState < p.getNumStates(); currState++) {
+			predProbReset += p.getInitialBelief().getBelief(currState) * Math.exp(logPredProbResetVals[currState]);
+		}
+		assert predProbReset >= 0 && predProbReset <= 1;		
+		
+		// Calculate Bayes Factor Surprise
+		return Math.log(Math.max(this.eps, predProbReset)) - Math.log(Math.max(this.eps, predProbCurr));
 	}
 	
 	/* *
@@ -172,14 +224,14 @@ public class DeltaIOTConnector {
 		return (lnB + sum2 - sum1);
 	}
 	
-	private double getMoteEntropy(int action, int nextstate) {
+	private double getMoteEntropy(double[][][] transitionBelief, int action, int nextstate) {
 		// MUTUAL INFORMATION CALCULATION
 		// iterate through each dirichlet distribution 
 		double entropy = 0.0;
 		for (int stateIndex = 0; stateIndex < p.getNumStates(); stateIndex++) {
 			// as we want to know total entropy of the transition beliefs, rather than just the transition entropy, we will be iterating over all possible next states
 			// And then weighting this entropy belief by our state belief
-			entropy += p.getInitialBelief().getBelief(stateIndex) * dirichlet_entropy(p.transitionBeliefCurr[stateIndex][action]);
+			entropy += p.getInitialBelief().getBelief(stateIndex) * dirichlet_entropy(transitionBelief[stateIndex][action]);
 		}
 		return entropy;
 	}
@@ -191,6 +243,49 @@ public class DeltaIOTConnector {
         } catch (IOException e) {
             e.printStackTrace();
         }
+	}
+	
+	/**
+	 * Calculates Mutual Information Surprise (MIS) for a given mote and timestep.
+	 * MIS represents the difference in mutual information (MI) between the current timestep and
+	 * the value from "lookback" timesteps earlier. Returns 0.0 if there isn't enough MI history.
+	 *
+	 * @param transitionBeliefPrior The prior transition belief (before +1.0 update)
+	 * @param transitionBeliefPosterior The posterior updated transition belief (after +1.0 update)
+	 * @param action The action taken
+	 * @param nextstate The next state
+	 * @param moteId    The unique identifier for the mote
+	 * @param timestep  The current simulation timestep
+	 * @return          The computed MIS value (0.0 if insufficient MI history)
+	 */
+	private double calculateAndStoreMIS(double[][][] transitionBeliefPrior, double[][][] transitionBeliefPosterior, int action, int nextstate, int moteId, int timestep) {
+		/// 1. CALCULATE PRIOR ENTROPY (uncertainty before observing the transition)
+		double priorEntropy = this.getMoteEntropy(transitionBeliefPrior, action, nextstate);
+		
+		/// 2. CALCULATE POSTERIOR ENTROPY (uncertainty after observing the transition)
+		double posteriorEntropy = this.getMoteEntropy(transitionBeliefPosterior, action, nextstate);
+
+		/// 3. CALCULATE MUTUAL INFORMATION
+		double mutualInformation = priorEntropy - posteriorEntropy;
+
+		// Get or create MI history for this mote
+		if (!miHistory.containsKey(moteId)) {
+			miHistory.put(moteId, new ArrayList<Double>());
+		}
+		ArrayList<Double> history = miHistory.get(moteId);
+		
+		// Store current MI in history
+		history.add(mutualInformation);
+		
+		// Calculate MIS if we have enough history (need at least lookback+1 entries: current + lookback previous)
+		double mis = 0.0;
+		if (history.size() > lookback) {
+			// MIS = MI[current] - MI[current - lookback]
+			mis = history.get(history.size() - 1) - history.get(history.size() - 1 - lookback);
+		}
+		// If not enough history, return 0.0 (no surprise yet)
+		
+		return mis;
 	}
 	
 	public void clearFile(String filename) {
@@ -207,70 +302,79 @@ public class DeltaIOTConnector {
 	
 	private void updateTransitionBelief(int action, int nextstate) {
 		// Work with copies, to ensure not overwriting the POMDPs transition beliefs unless intended to
-		double[][][] transitionBeliefCurr = p.transitionBeliefCurr.clone();
-		double[][][] transitionBeliefReset = p.transitionBeliefReset.clone();
+		// Perform a deep copy to avoid aliasing/modifying p.transitionBeliefCurr
+		double[][][] transitionBeliefCurrTemp = Arrays.stream(p.transitionBeliefCurr)
+		    .map(twoD -> Arrays.stream(twoD)
+		        .map(arr -> arr.clone())
+		        .toArray(double[][]::new))
+		    .toArray(double[][][]::new);
+		double[][][] transitionBeliefResetTemp = Arrays.stream(p.transitionBeliefReset)
+		    .map(twoD -> Arrays.stream(twoD)
+		        .map(arr -> arr.clone())
+		        .toArray(double[][]::new))
+		    .toArray(double[][][]::new);
 		
 		// Update pseudo-counts by adding normalised likelihoods to relevant indexes
 		// This reflects our adjustment in the confidence of the elected transition
 		for (int stateIndex = 0; stateIndex < p.getNumStates(); stateIndex++) {
-			transitionBeliefCurr[stateIndex][action][nextstate] += 1.0; //(1.0 / Double.valueOf(p.getNumStates())); // update by relative confidence we are in each state?
-			transitionBeliefReset[stateIndex][action][nextstate] += 1.0; //(1.0 / Double.valueOf(p.getNumStates()));
+			transitionBeliefCurrTemp[stateIndex][action][nextstate] += 1.0; // update by relative confidence we are in each state?
+			transitionBeliefResetTemp[stateIndex][action][nextstate] += 1.0;
 		}
-			
-		// Calculating the probability of moving to nextstate, weighted by the current belief state, for each current belief state
-		double[] logPredProbCurrVals = this.getLogPredeProbs(transitionBeliefCurr, action, nextstate);
-		double logPredProbCurr = 0;
-		for (int currState = 0; currState < p.getNumStates(); currState++) {
-			logPredProbCurr += Math.log(p.getInitialBelief().getBelief(currState)) + logPredProbCurrVals[currState];
+
+		// Select which surprise measure to use for gamma calculation
+		// Options: "CC" (Confidence-Corrected Surprise - default), "BF" (Bayes Factor Surprise), or "MIS" (Mutual Information Surprise)
+		// To change, call setSurpriseMeasureForGamma(measure) before running
+
+		double surpriseCC = confidenceCorrectedSurprise(p.transitionBeliefCurr, transitionBeliefResetTemp, action, nextstate);
+		double logSurpriseCC = Math.log(Math.max(this.eps, surpriseCC));
+		// bayesFactorSurprise already returns a log value, so don't take log again
+		double logSurpriseBF = Math.max(Math.log(this.eps), bayesFactorSurprise(p.transitionBeliefCurr, p.transitionBeliefReset, action, nextstate));
+		double currentMIS = calculateAndStoreMIS(p.transitionBeliefCurr, transitionBeliefCurrTemp, action, nextstate, DeltaIOTConnector.selectedmote.getMoteid(), DeltaIOTConnector.timestep);		
+		double logSurpriseMIS = Math.log(Math.max(this.eps, Math.abs(currentMIS)));
+
+		double logSurprise = 0.0;
+		if (surpriseMeasureForGamma.equals("CC")) {
+			logSurprise = logSurpriseCC;
+		} else if (surpriseMeasureForGamma.equals("BF")) {
+			logSurprise = logSurpriseBF;
+		} else if (surpriseMeasureForGamma.equals("MIS")) {
+			// MIS < 0 => over-exploitation, so we are gaining no new information. Retreat to a more vague prior to open up exploration
+			// MIS > 0 => over-exploration, so we are gaining new information. Continue to explore the current transition belief
+			logSurprise = logSurpriseMIS;
 		}
-		assert Math.exp(logPredProbCurr) >= 0 && Math.exp(logPredProbCurr) <= 1;
-		
-		double[] logPredProbResetVals = this.getLogPredeProbs(transitionBeliefReset, action, nextstate);
-		double logPredProbReset = 0;
-		for (int currState = 0; currState < p.getNumStates(); currState++) {
-			logPredProbReset += Math.log(p.getInitialBelief().getBelief(currState) * Math.exp(logPredProbResetVals[currState]));
-		}
-		assert Math.exp(logPredProbReset) >= 0 && Math.exp(logPredProbReset) <= 1;
-		
-		// prevent underflow
-		//logPredProbReset = Math.max(logPredProbReset, eps);
-		//logPredProbCurr = Math.max(logPredProbCurr, eps);
-		
-		
-		// Calculate Bayes Factor Surprise
-		double logSurpriseBF = logPredProbReset- logPredProbCurr;
-		double logSurpriseCC = Math.log(confidenceCorrectedSurprise(transitionBeliefCurr, transitionBeliefReset, action, nextstate)); 
-				
+
 		// Predefined rate m dictates how much model changes
-		double p_c = 0.6;
+		// p_c controls the rate of change of the transition belief
+		double p_c = 0.5;
 		assert p_c >= 0 && p_c < 1;
 		double m = p_c / (1 - p_c);
-		
-		double gamma = 1.0 / (1.0 + Math.max(eps, Math.exp(-logSurpriseCC)) / m);
+
+		// varSMiLE gamma formula: gamma = 1 / (1 + exp(-logSurprise) / m)
+		// This ensures: high surprise -> high gamma (more learning), low surprise -> low gamma (less learning)
+		//double gamma = 1.0 / (1.0 + Math.max(this.eps, Math.exp(-logSurprise)) / m);
+		double gamma = (m * Math.exp(logSurprise)) / (1 + m * Math.exp(logSurprise));
 		assert gamma >= 0.0 && gamma <= 1.0;
-		//double gamma = 1.0 / (1.0 + Math.exp(-logSurpriseBF) / m);
 		
 		appendToFile("output_dir/surpriseBF.txt", Math.exp(logSurpriseBF), DeltaIOTConnector.selectedmote.getMoteid(), DeltaIOTConnector.timestep);
 		appendToFile("output_dir/gamma.txt", gamma, DeltaIOTConnector.selectedmote.getMoteid(), DeltaIOTConnector.timestep);
 		appendToFile("output_dir/surpriseCC.txt", Math.exp(logSurpriseCC), DeltaIOTConnector.selectedmote.getMoteid(), DeltaIOTConnector.timestep);
-		
-		
+		appendToFile("output_dir/surpriseMIS.txt", currentMIS, DeltaIOTConnector.selectedmote.getMoteid(), DeltaIOTConnector.timestep);
+
 		// varSMiLE updating of transitionBeliefCurr
-		// CHECK THIS. do we update all transitions, or just that of the next state
+		// The varSMiLE rule: new_belief = (1-gamma) * updated_current + gamma * updated_flat_prior
+		// Both beliefs are updated with +1.0 for the observed transition
 		for (int stateIndex = 0; stateIndex < p.getNumStates(); stateIndex++) {
 			for (int nextStateIndex = 0; nextStateIndex < p.getNumStates(); nextStateIndex++) {
-				transitionBeliefCurr[stateIndex][action][nextStateIndex] = 
-						(1- gamma) * transitionBeliefCurr[stateIndex][action][nextStateIndex] 
-						+ gamma * transitionBeliefReset[stateIndex][action][nextStateIndex];
+				transitionBeliefCurrTemp[stateIndex][action][nextStateIndex] = 
+						(1- gamma) * transitionBeliefCurrTemp[stateIndex][action][nextStateIndex] 
+						+ gamma * transitionBeliefResetTemp[stateIndex][action][nextStateIndex];
 			}
 				
 		}
 		
-		p.transitionBeliefCurr = transitionBeliefCurr;
+		p.transitionBeliefCurr = transitionBeliefCurrTemp;
 	}
-	
-	
-	
+
 	public int performAction(int action) {
 		////Perform ITP or DTP on the link on the simulator
 		///return rewards and observations
@@ -284,20 +388,10 @@ public class DeltaIOTConnector {
 		nextstate = p.nextState(p.getCurrentState(), action);
 		p.setCurrentState(nextstate);
 		
-		/// 1. CALCULATE PRIOR ENTROPY (uncertainty before observing the transition)
-		double priorEntropy = this.getMoteEntropy(action, nextstate);
-		this.entropy = priorEntropy;
-		
 		/// 2. UPDATE TRANSITION BELIEFS based on the new observation
-		// This provides the information/data that will dictate a change in entropy of the system		
 		// update world probabilities by taking Expectation[transitionBeliefCurr] 
 		this.updateTransitionBelief(action, nextstate);
 		// I've circumvented this by using the pseudo counts to just calculate instances of probabilities in the getTransitionProbability function when required
-		
-		/// 3. CALCULATE POSTERIOR ENTROPY
-		///double posteriorEntropy = this.getMoteEntropy(action, nextstate);
-		double posteriorEntropy = this.getMoteEntropy(action, nextstate);
-		this.mutualInformation = priorEntropy - posteriorEntropy;
 		
 		/// 4. Observation belief + updates
 		int obs = p.getObservation(action, nextstate);
