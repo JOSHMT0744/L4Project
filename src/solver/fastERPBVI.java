@@ -6,8 +6,10 @@
 package solver;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
 import java.util.Set;
 
@@ -20,13 +22,12 @@ import pomdp.SolverProperties;
  * Uses soft-max (log-sum-exp) value functions instead of hard max
  * for smoother policy learning.
  */
-public class ERPBVI implements Solver {
-    
-    private double lambda;  // temperature parameter
-    private boolean verbose;
-    
+public class fastERPBVI implements Solver {    
     private Random rnd;
     private SolverProperties sp;
+    private double lambda;  // temperature parameter
+    private boolean verbose;
+
     private long totalSolveTime = 0;
     private double expectedValue;
     
@@ -40,11 +41,10 @@ public class ERPBVI implements Solver {
     private long totalLookaheadTime = 0;
     private int backupCount = 0;
     
-    public ERPBVI(SolverProperties solverProperties, Random rnd) {
-        this(solverProperties, rnd, 100, false);
-    }
-    
-    public ERPBVI(SolverProperties solverProperties, Random rnd, double lambda, boolean verbose) {
+    // Cache for belief updates: key = (belief, action, observation)
+    private Map<String, BeliefPoint> beliefUpdateCache = new HashMap<>();
+
+    public fastERPBVI(SolverProperties solverProperties, Random rnd, double lambda, boolean verbose) {
         this.sp = solverProperties;
         this.rnd = rnd;
         this.lambda = lambda;
@@ -137,6 +137,13 @@ public class ERPBVI implements Solver {
         return maxVal;
     }
     
+    /**
+     * Generate cache key for belief update
+     */
+    private String getBeliefUpdateKey(BeliefPoint b, int a, int o) {
+        return beliefKey(b.getBelief()) + "|a" + a + "|o" + o;
+    }
+    
     // ==================== Algorithm 3: Backup ====================
     
     /**
@@ -147,8 +154,7 @@ public class ERPBVI implements Solver {
     /**
      * Backup a single belief point (Algorithm 3)
      * Appends new alpha vector to each Q-function Ξ[a]
-     */
-    /**
+     * 
      * In the ERPBVI backup, lambda controls policy stochasticity:
      *   - Large lambda: more stochastic, encourages exploration; weights in softmax are more uniform.
      *   - Small lambda: more deterministic/greedy, selects the action(s) with highest expected value.
@@ -162,8 +168,6 @@ public class ERPBVI implements Solver {
      * A moderate lambda (not too small, not too large) is typically best, balancing exploitation and exploration.
      * 
      * You can start with a value such as lambda=1.0 or higher, and tune it based on empirical performance.
-     * 
-     * -- backup procedure remains as before --
      */
     private void backup(POMDP pomdp, BeliefPoint b) {
         int nStates = pomdp.getNumStates();
@@ -183,9 +187,16 @@ public class ERPBVI implements Solver {
             double[][] alphaAO = new double[nObservations][nStates];
             
             for (int o = 0; o < nObservations; o++) {
-                // Update belief: b' = Update(b, a, o)
+                // Update belief: b' = Update(b, a, o) - use cache if available
                 startTime = System.nanoTime();
-                BeliefPoint bPrimePoint = pomdp.updateBelief(b, a, o);
+                String cacheKey = getBeliefUpdateKey(b, a, o);
+                BeliefPoint bPrimePoint = beliefUpdateCache.get(cacheKey);
+                if (bPrimePoint == null) {
+                    bPrimePoint = pomdp.updateBelief(b, a, o);
+                    if (bPrimePoint != null) {
+                        beliefUpdateCache.put(cacheKey, bPrimePoint);
+                    }
+                }
                 double[] bPrime = (bPrimePoint != null) ? bPrimePoint.getBelief() : null;
                 beliefUpdateTime += System.nanoTime() - startTime;
                 
@@ -278,6 +289,10 @@ public class ERPBVI implements Solver {
      */
     private void improve(POMDP pomdp, List<BeliefPoint> B) {
         long startTime = System.currentTimeMillis();
+        
+        // Clear belief update cache at start of improve iteration
+        beliefUpdateCache.clear();
+        
         while (true) {
             // Store old values for convergence check
             List<List<AlphaVector>> XiOld = new ArrayList<>();
@@ -336,11 +351,20 @@ public class ERPBVI implements Solver {
     
     /**
      * Expand belief set with successor beliefs
+     * Optimized with early termination and distance threshold
      */
     private List<BeliefPoint> expand(POMDP pomdp, List<BeliefPoint> B, Set<BeliefPoint> Bset) {
         List<BeliefPoint> BNew = new ArrayList<>(B);
+        double distanceThreshold = 0.01; // Minimum distance to consider adding a belief
+        
+        int addedCount = 0;
+        int maxAdditionsPerIteration = Math.max(1, B.size() / 2); // Limit expansion rate
         
         for (BeliefPoint b : B) {
+            if (addedCount >= maxAdditionsPerIteration) {
+                break; // Early termination: limit expansion
+            }
+            
             // Find most distant successor
             double maxDist = -1;
             BeliefPoint bestSuccPoint = null;
@@ -349,14 +373,12 @@ public class ERPBVI implements Solver {
                 for (int o = 0; o < pomdp.getNumObservations(); o++) {
                     BeliefPoint bPrimePoint = pomdp.updateBelief(b, a, o);
                     
-                    if (bPrimePoint != null) {
-                        if (!Bset.contains(bPrimePoint)) {
-                            // Compute distance to existing beliefs
-                            double dist = computeMinDistance(bPrimePoint.getBelief(), B);
-                            if (dist > maxDist) {
-                                maxDist = dist;
-                                bestSuccPoint = bPrimePoint;
-                            }
+                    if (bPrimePoint != null && !Bset.contains(bPrimePoint)) {
+                        // Compute minimum distance to existing beliefs
+                        double dist = computeMinDistance(bPrimePoint.getBelief(), B);
+                        if (dist > maxDist && dist > distanceThreshold) {
+                            maxDist = dist;
+                            bestSuccPoint = bPrimePoint;
                         }
                     }
                 }
@@ -366,6 +388,7 @@ public class ERPBVI implements Solver {
                 BeliefPoint newBelief = new BeliefPoint(bestSuccPoint.getBelief());
                 BNew.add(newBelief);
                 Bset.add(newBelief);
+                addedCount++;
             }
         }
         
@@ -381,15 +404,15 @@ public class ERPBVI implements Solver {
     }
     
     private double computeMinDistance(double[] b, List<BeliefPoint> B) {
-        double maxDist = 0;
+        double minDist = Double.POSITIVE_INFINITY;
         for (BeliefPoint bp : B) {
             double dist = 0;
             for (int i = 0; i < b.length; i++) {
                 dist += Math.abs(b[i] - bp.getBelief(i));
             }
-            if (dist > maxDist) maxDist = dist;
+            if (dist < minDist) minDist = dist;
         }
-        return maxDist;
+        return minDist == Double.POSITIVE_INFINITY ? 0 : minDist;
     }
     
     // ==================== Algorithm 1: Solve ====================

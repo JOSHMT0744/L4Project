@@ -31,19 +31,19 @@ import pomdp.SolverProperties;
  * Solving POMDPs using point-based value iteration
  */
 
-public class SolverApproximate implements Solver {	
+public class Perseus implements Solver {	
 	private Random rnd;
 	private SolverProperties sp;
 	private long totalSolveTime = 0;
 	private double expectedValue;
 	
-	public SolverApproximate(SolverProperties solverProperties, Random rnd) {
+	public Perseus(SolverProperties solverProperties, Random rnd) {
 		this.rnd = rnd;
 		this.sp = solverProperties;
 	}
 	
 	public String getType() {
-		return "approximate";
+		return "approximate (perseus)";
 	}
 
 	public double getTotalSolveTime() {

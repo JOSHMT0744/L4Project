@@ -48,7 +48,9 @@ import solver.AlphaVector;
 import solver.BeliefPoint;
 import solver.ERPBVI;	
 import solver.Solver;
-import solver.SolverApproximate;
+import solver.Perseus;
+import solver.ERPerseus;
+import solver.fastERPBVI;
 
 
 
@@ -285,7 +287,13 @@ public class SolvePOMDP {
 			case "gip":
 				throw new RuntimeException("GIP is not supported");
 			case "perseus":
-				this.solver = new SolverApproximate(sp, new Random(222));
+				this.solver = new Perseus(sp, new Random(222));
+				break;
+			case "erperseus":
+				this.solver = new ERPerseus(sp, new Random(222), 0.5);
+				break;
+			case "faserpbvi":
+				this.solver = new fastERPBVI(sp, new Random(222), 0.5, false);
 				break;
 			case "erpbvi":
 				// Entropy-Regularized PBVI with default parameters
