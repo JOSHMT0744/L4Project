@@ -149,7 +149,7 @@ def misChart(df):
         )
     )
 
-    """fig.add_trace(go.Scatter(
+    fig.add_trace(go.Scatter(
         x=df["timestep"],
         y=df["mis_upper"],
         mode="lines",
@@ -165,7 +165,7 @@ def misChart(df):
         name="MIS Lower Bound",
         line=dict(color='red',
                   width=1),
-    ))"""
+    ))
 
     fig.update_layout(
         title="Mean MIS Over Time with Error Bounds",
@@ -203,20 +203,53 @@ def getData():
 
     dfs_2 = []
     dfs_3 = []
-    folder_path = "output_dir"
+    # Determine the correct output directory path
+    # The script may be run from workspace root or from L4Project/ directory
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    # If script is in L4Project/, use output_dir relative to script
+    # If script is elsewhere, try L4Project/output_dir
+    if os.path.basename(script_dir) == "L4Project":
+        folder_path = os.path.join(script_dir, "output_dir")
+    else:
+        # Try L4Project/output_dir relative to script location
+        l4project_output = os.path.join(script_dir, "L4Project", "output_dir")
+        if os.path.exists(l4project_output):
+            folder_path = l4project_output
+        else:
+            # Fallback: try output_dir in current directory
+            folder_path = "output_dir"
+    
+    # Verify the folder exists
+    if not os.path.exists(folder_path):
+        raise FileNotFoundError(f"Output directory not found: {folder_path}. Tried: {script_dir}/output_dir, {script_dir}/L4Project/output_dir, ./output_dir")
+    
     for filename in os.listdir(folder_path):
         file_path = os.path.join(folder_path, filename)
         if os.path.isfile(file_path):
-            if file_path == "output_dir\\IoT.alpha" or file_path == "output_dir\\SelectedAction.txt":
+            # Skip files that shouldn't be processed
+            if filename == "IoT.alpha" or filename == "SelectedAction.txt":
                 continue
             # Skip empty files to avoid EmptyDataError
             if os.path.getsize(file_path) == 0:
                 print(f"Warning: Skipping empty file: {filename}")
                 continue
             try:
-                df = pd.read_csv(file_path, sep=r"\s+", header=None)
+                # Read CSV with whitespace separator, skip bad lines
+                df = pd.read_csv(file_path, sep=r"\s+", header=None, on_bad_lines='skip', engine='python')
             except pd.errors.EmptyDataError:
                 print(f"Warning: Skipping empty file: {filename}")
+                continue
+            except pd.errors.ParserError as e:
+                print(f"Warning: Skipping file {filename} due to parsing error: {e}")
+                print(f"  File path: {file_path}")
+                continue
+            except Exception as e:
+                print(f"Warning: Skipping file {filename} due to error: {e}")
+                continue
+            
+            # Skip if DataFrame is empty after reading
+            if df.empty:
+                print(f"Warning: Skipping file {filename} - DataFrame is empty after reading")
                 continue
             
             file_col_name = filename.split('.')[0].lower()

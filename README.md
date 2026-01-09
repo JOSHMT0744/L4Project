@@ -1,4 +1,35 @@
-# Surprise-based BA-POMDP
+# Surprise-based BA-POMDP: Entropy-Regularized Point-Based Value Iteration with Adaptive Learning
+
+## Research Contribution
+
+This work presents a novel integration of **entropy-regularized POMDP solvers** with **surprise-based adaptive learning** for autonomous system adaptation. The key contributions are:
+
+### 1. Entropy-Regularized Perseus (ERPerseus)
+- **Contribution**: Extends the classic Perseus algorithm with entropy regularization using softmax value functions
+- **Benefit**: Enables smoother policy learning and better exploration-exploitation balance compared to hardmax Perseus
+- **Implementation**: Replaces deterministic action/observation selection with softmax-weighted combinations controlled by a temperature parameter (λ)
+
+### 2. Mutual Information Surprise (MIS) for Adaptive Learning
+- **Contribution**: Implements MIS as a signal of epistemic growth, quantifying the impact of new observations on mutual information
+- **Theoretical Foundation**: Based on Theorem 1 from [Mutual Information Surprise: Rethinking Unexpectedness in Autonomous Systems](https://www.arxiv.org/pdf/2508.17403)
+- **Application**: Uses MIS bounds (95% confidence interval) to dynamically adjust learning rate (gamma) in varSMiLE rule
+
+### 3. varSMiLE Integration
+- **Contribution**: Integrates variable Surprise-Minimizing Learning (varSMiLE) with POMDP planning
+- **Adaptive Learning**: Learning rate (gamma) dynamically adjusts based on surprise measures (MIS, Bayes Factor, or Confidence-Corrected Surprise)
+- **Benefit**: Enables the system to learn transition probabilities adaptively while maintaining stability
+
+### 4. DeltaIoT Case Study
+- **Application Domain**: Adaptive IoT network management with QoS optimization
+- **Objectives**: Simultaneously minimize energy consumption (MEC) and reduce packet loss (RPL)
+- **Demonstration**: Shows how entropy-regularized policies outperform deterministic policies in dynamic environments
+
+### Key Advantages Over Baseline Methods
+
+1. **Better Exploration**: Softmax policies explore more effectively than hardmax policies
+2. **Adaptive Learning**: varSMiLE ensures learning rate adapts to system surprise
+3. **Theoretical Guarantees**: MIS bounds provide statistical guarantees on surprise estimates
+4. **Computational Efficiency**: Optimizations maintain Perseus's speed while adding regularization benefits
 
 ## Output Directory
 `output_dir`
@@ -60,40 +91,219 @@
 
 Edit `src/solver.config` to customize these settings.
 
-## Running the Program
+## Reproducing the Research
 
-### Method 1: Run from Eclipse IDE
+### Prerequisites
 
-1. Open `src/main/SolvePOMDP.java`
-2. Right-click on the file → Run As → Java Application
-3. Or use the main method's run configuration
+1. **Java Development Kit (JDK)**: Version 8 or higher
+2. **Python 3.7+**: For visualization scripts
+3. **Eclipse IDE** (optional): For development and debugging
+4. **DeltaIoT Simulator**: Included as `Simulator.jar` in `libraries/`
 
-### Method 2: Run from Command Line
+### Step 1: Environment Setup
 
-#### Compile the project:
+#### 1.1 Clone/Download the Repository
+```bash
+# Navigate to your workspace
+cd /path/to/workspace
+
+# The project should be in L4Project/ directory
+```
+
+#### 1.2 Install Python Dependencies
+```bash
+cd L4Project
+
+# Create virtual environment (recommended)
+python -m venv .venv
+
+# Activate virtual environment
+# On Windows:
+.venv\Scripts\activate
+# On Linux/Mac:
+source .venv/bin/activate
+
+# Install required packages
+pip install -r requirements.txt
+```
+
+#### 1.3 Verify Java Setup
+```bash
+java -version  # Should show JDK 8 or higher
+javac -version # Should show JDK 8 or higher
+```
+
+### Step 2: Configure the Solver
+
+Edit `src/solver.config` to select your algorithm:
+
+```properties
+# For Entropy-Regularized Perseus (recommended)
+algorithmType=erperseus
+
+# For standard Perseus (baseline)
+# algorithmType=perseus
+
+# For Entropy-Regularized PBVI
+# algorithmType=erpbvi
+
+# For Fast Entropy-Regularized PBVI
+# algorithmType=faserpbvi
+```
+
+**Key Configuration Parameters:**
+- `beliefSamplingRuns`: Number of belief point trajectories (default: 100)
+- `beliefSamplingSteps`: Length of each trajectory (default: 20)
+- `valueFunctionTolerance`: Convergence threshold (default: 0.01)
+- `timeLimit`: Maximum solve time per planning step (default: 60 seconds)
+
+### Step 3: Run Experiments
+
+#### Method 1: Run from Eclipse IDE (Recommended for Development)
+
+1. Import the project into Eclipse:
+   - File → Import → Existing Projects into Workspace
+   - Select the `L4Project` directory
+   - Ensure all JAR files in `libraries/` are on the build path
+
+2. Configure Run Settings:
+   - Right-click `src/main/SolvePOMDP.java`
+   - Run As → Java Application
+   - Or create a Run Configuration with:
+     - Main class: `main.SolvePOMDP`
+     - Working directory: `${workspace_loc:L4Project}`
+
+3. Execute:
+   - The program will run for the number of timesteps specified in `runCaseIoT()` (default: 400)
+   - Results will be written to `output_dir/`
+   - Charts will be generated automatically after completion
+
+#### Method 2: Run from Command Line
+
 ```bash
 # Navigate to project root
 cd L4Project
 
-# Compile (adjust classpath as needed for your setup)
-javac -cp "libraries/*" -d bin src/main/*.java src/**/*.java
-```
+# Compile the project
+# On Windows:
+javac -cp "libraries/*" -d bin -sourcepath src src/main/*.java src/**/*.java
 
-#### Run the program:
-```bash
-# Run from project root directory
+# On Linux/Mac:
+javac -cp "libraries/*" -d bin -sourcepath src src/main/*.java src/**/*.java
+
+# Run the program
+# On Windows:
 java -cp "bin;libraries/*" main.SolvePOMDP
 
-# On Linux/Mac, use colon instead of semicolon:
+# On Linux/Mac:
 java -cp "bin:libraries/*" main.SolvePOMDP
 ```
 
-### Method 3: Run as JAR (if packaged)
+#### Method 3: Run as JAR (if packaged)
 
-If you have a packaged JAR file:
 ```bash
 java -jar SolvePOMDP.jar
 ```
+
+### Step 4: Analyze Results
+
+After execution, check the following:
+
+1. **Output Files** (in `output_dir/`):
+   - `gamma.txt`: Learning rate adaptation over time
+   - `surpriseMIS.txt`: Mutual Information Surprise values
+   - `MISBounds.txt`: Statistical bounds for MIS (95% confidence)
+   - `MECSat.txt` / `RPLSat.txt`: QoS satisfaction metrics
+   - `SelectedAction.txt`: Actions chosen by the planner
+
+2. **Visualizations**:
+   - Charts are automatically generated and opened in your browser
+   - If charts don't open automatically, run manually:
+     ```bash
+     cd L4Project
+     python createCharts.py
+     ```
+
+3. **Key Metrics to Evaluate**:
+   - **Expected Value**: Should increase over time as the system learns (from ~450 to 800+)
+   - **Gamma (Learning Rate)**: Should adapt based on surprise (check `gamma.txt`)
+   - **MIS Values**: Should show epistemic growth patterns
+   - **QoS Satisfaction**: MEC and RPL should improve over time
+
+### Step 5: Reproducing Specific Experiments
+
+#### Experiment 1: Compare ERPerseus vs Perseus
+
+1. Set `algorithmType=perseus` in `solver.config`
+2. Run experiment, save results
+3. Set `algorithmType=erperseus` in `solver.config`
+4. Run experiment again
+5. Compare expected values and action selection patterns
+
+#### Experiment 2: Test Different Surprise Measures
+
+In `SolvePOMDP.java`, modify line 608:
+```java
+// For MIS-based learning (recommended)
+deltaConnector.setSurpriseMeasureForGamma("MIS");
+
+// For Bayes Factor Surprise
+deltaConnector.setSurpriseMeasureForGamma("BF");
+
+// For Confidence-Corrected Surprise
+deltaConnector.setSurpriseMeasureForGamma("CC");
+```
+
+#### Experiment 3: Vary Lambda (Temperature) Parameter
+
+In `SolvePOMDP.java`, modify line 293:
+```java
+// Higher lambda = more exploration (default: 0.5)
+this.solver = new ERPerseus(sp, new Random(222), 0.5);
+
+// Lower lambda = more exploitation (e.g., 0.1)
+this.solver = new ERPerseus(sp, new Random(222), 0.1);
+
+// Higher lambda = more exploration (e.g., 1.0)
+this.solver = new ERPerseus(sp, new Random(222), 1.0);
+```
+
+### Step 6: Expected Results
+
+**Successful Run Indicators:**
+- Expected values start around 450-480 and increase to 800+ over 400 timesteps
+- Gamma values adapt between 0.0001 and 1.0 based on surprise
+- MIS values show both positive (epistemic growth) and negative (over-exploitation) phases
+- Action selection shows adaptive behavior (not always the same action)
+- Charts display smooth learning curves
+
+**Baseline Comparison:**
+- **Perseus (hardmax)**: Expected values may plateau around 500-700
+- **ERPerseus (softmax)**: Expected values should reach 800+ with proper learning
+
+### Troubleshooting Reproduction
+
+1. **Low Expected Values (< 500)**:
+   - Check that `gamma` values in `gamma.txt` are not stuck at minimum (0.0001)
+   - Verify MIS calculation is working (check `surpriseMIS.txt` has non-zero values after initial timesteps)
+   - Ensure `lambda` parameter is set appropriately (0.5 is recommended)
+
+2. **No Learning (Gamma Always Minimum)**:
+   - Verify surprise measure is set correctly
+   - Check that transition beliefs are being updated (see `updateTransitionBelief` in `DeltaIOTConnector.java`)
+   - Ensure MIS history has enough entries (lookback = 4)
+
+3. **Charts Not Generating**:
+   - Verify Python virtual environment is activated
+   - Check that `output_dir/` contains all required data files
+   - Run `python createCharts.py` manually to see error messages
+
+4. **Inconsistent Results**:
+   - Ensure random seed is set consistently (currently `new Random(222)`)
+   - Check that all motes are being processed (should see 14 motes per timestep)
+   - Verify QoS data is being retrieved correctly (check for "Unknown value data" warnings)
+
+## Running the Program
 
 ## Program Execution Flow
 
@@ -282,7 +492,51 @@ This program is free software: you can redistribute it and/or modify it under th
 Based on SolvePOMDP by Erwin Walraven (Delft University of Technology)
 Extended for IoT adaptation use case.
 
+## Implementation Details
+
+### Algorithm Variants
+
+#### ERPerseus (Entropy-Regularized Perseus)
+- **Location**: `src/solver/ERPerseus.java`
+- **Key Feature**: Softmax value functions with temperature parameter λ
+- **Backup Function**: Uses softmax for both observation and action selection when λ > 0
+- **Default Lambda**: 0.5 (configurable in `SolvePOMDP.java`)
+
+#### ERPBVI (Entropy-Regularized Point-Based Value Iteration)
+- **Location**: `src/solver/ERPBVI.java`
+- **Key Feature**: Standard entropy-regularized PBVI with belief update caching
+- **Optimizations**: Btilde-style filtering, optimized belief expansion
+
+#### fastERPBVI (Fast Entropy-Regularized PBVI)
+- **Location**: `src/solver/fastERPBVI.java`
+- **Key Feature**: Optimized version with additional performance improvements
+
+### varSMiLE Implementation
+
+The variable Surprise-Minimizing Learning rule is implemented in `DeltaIOTConnector.java`:
+
+```java
+// Gamma calculation based on surprise measure
+double gamma = 1.0 / (1.0 + Math.exp(-logSurprise) / m);
+gamma = Math.max(0.0001, gamma); // Minimum learning rate
+
+// varSMiLE update rule
+new_belief = (1 - gamma) * updated_current + gamma * updated_flat_prior
+```
+
+### MIS Bounds Calculation
+
+MIS bounds are calculated according to Theorem 1:
+- **Confidence Level (ρ)**: 0.05 (95% confidence interval)
+- **Lookback Period (m)**: 4 timesteps
+- **Bounds**: Computed using statistical bounds on MLE-based mutual information estimates
+
 ## Recent Improvements
+
+### Entropy Regularization Integration
+- **ERPerseus**: Successfully integrated softmax value functions into Perseus algorithm
+- **Performance**: Maintains Perseus's computational efficiency while enabling better exploration
+- **Adaptive Learning**: varSMiLE rule dynamically adjusts learning rate based on surprise measures
 
 ### QoS Data Synchronization Fix
 The program now includes robust handling of QoS (Quality of Service) data retrieval from the DeltaIoT simulator:
@@ -294,11 +548,29 @@ The program now includes robust handling of QoS (Quality of Service) data retrie
 
 This ensures reliable QoS data access without console noise, improving both user experience and program reliability.
 
+### MIS-Based Adaptive Learning
+- **Implementation**: Full MIS calculation with entropy-based mutual information
+- **Bounds**: Statistical bounds computed with 95% confidence interval
+- **Integration**: MIS used for dynamic gamma adjustment in varSMiLE rule
+- **Minimum Learning Rate**: Ensures learning continues even when surprise is very low (gamma ≥ 0.0001)
+
+### Key References
+
+1. **Mutual Information Surprise**: [Mutual Information Surprise: Rethinking Unexpectedness in Autonomous Systems](https://www.arxiv.org/pdf/2508.17403)
+2. **Perseus Algorithm**: Spaan, M. T. J., & Vlassis, N. (2005). Perseus: Randomized point-based value iteration for POMDPs. *Journal of artificial intelligence research*, 24, 195-220.
+3. **Entropy-Regularized MDPs**: Delecki, Harrison, et al. "Entropy-regularized Point-based Value Iteration." arXiv preprint arXiv:2402.09388 (2024).
+4. **varSMiLE**: Liakoni, Vasiliki, et al. "Learning in volatile environments with the bayes factor surprise." Neural Computation 33.2 (2021): 269-340.
+
 ## Additional Notes
 
 - The program is hardcoded to run `IoT.POMDP` domain (see `main` method)
-- Number of timesteps is set to 500 in `runCaseIoT` method
+- Number of timesteps is configurable in `runCaseIoT` method (default: 400)
 - The Python virtual environment path is automatically detected (Windows: `.venv\Scripts\python.exe`, Linux/Mac: `.venv/bin/python`)
+- Random seed is fixed to 222 for reproducibility (see `SolvePOMDP.java` line 290)
 
-TODO
+## Future Work / TODO
+
 - Evaluate MECSat and RPLSat grouped by each mote, to see which motes are contributing more strongly to extreme values
+- Implement additional entropy-regularized solvers
+- Extend MIS bounds to support different confidence levels at the mote-level, in correspondance with expert definitions
+- Propose an adaptive hybrid deterministic-stochastic policy that chooses whether to pick the best action stochastically or deterministically depending on the model's observations of the system.

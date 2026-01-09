@@ -93,7 +93,6 @@ public class ERPerseus implements Solver {
 				}
 				int observation = ps.sampleItem();
 				
-				//System.out.println("Observation sampled~~~~~~~~~~~~~~~~~~~~"+observation);
 				// find new belief point
 				BeliefPoint bao = pomdp.updateBelief(b, action, observation);
 				bao.setHistory(b.getHistoryCopy());

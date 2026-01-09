@@ -1,6 +1,7 @@
 package iot;
 
 import java.io.BufferedWriter;
+import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.util.ArrayList;
@@ -48,9 +49,22 @@ public class DeltaIOTConnector {
 	// History of mutual information values per mote for MIS calculation
 	private Map<Integer, ArrayList<Double>> miHistory;
 	private int lookback = 4; // m - lookback period for MIS calculation
+	// Track which timesteps have already had bounds written (to avoid duplicates)
+	private int lastBoundsTimestep = -1;
 	
 	// Surprise measure to use for gamma calculation: "CC" (Confidence-Corrected), "BF" (Bayes Factor), or "MIS" (Mutual Information Surprise)
 	private String surpriseMeasureForGamma = "CC"; // Default to Confidence-Corrected Surprise
+	
+	// Output directory for file operations
+	private String outputDirectory = "L4Project/output_dir"; // Default, will be set by SolvePOMDP
+	
+	public void setOutputDirectory(String outputDir) {
+		this.outputDirectory = outputDir;
+	}
+	
+	public String getOutputDirectory() {
+		return this.outputDirectory;
+	}
 	
 	public DeltaIOTConnector() {
 		selectedindex=0;
@@ -200,6 +214,8 @@ public class DeltaIOTConnector {
 	
 	/* *
 	 * Calculating entropy for one dirichlet distribution set of alpha pseudo-counts
+	 * @param alpha The alpha vector of pseudo-counts
+	 * @return The entropy of the dirichlet distribution
 	 */
 	private double dirichlet_entropy(double[] alpha) {
 		double alpha0 = Arrays.stream(alpha).sum();
@@ -224,6 +240,13 @@ public class DeltaIOTConnector {
 		return (lnB + sum2 - sum1);
 	}
 	
+	/**
+	 * Calculates the entropy of a mote's transition belief for a given action and next state.
+	 * @param transitionBelief The transition belief of the mote
+	 * @param action The action taken
+	 * @param nextstate The next state
+	 * @return The entropy of the mote's transition belief
+	 */
 	private double getMoteEntropy(double[][][] transitionBelief, int action, int nextstate) {
 		// MUTUAL INFORMATION CALCULATION
 		// iterate through each dirichlet distribution 
@@ -237,12 +260,41 @@ public class DeltaIOTConnector {
 	}
 	
 	private void appendToFile(String filename, double variable, int moteNumber, int timestep) {
-		try (BufferedWriter writer = new BufferedWriter(new FileWriter(filename, true))) {
+		// Use outputDirectory if filename is relative, otherwise use filename as-is
+		String fullPath = filename.startsWith(File.separator) || (filename.length() > 1 && filename.charAt(1) == ':') 
+			? filename : new File(outputDirectory, filename).getPath();
+		try (BufferedWriter writer = new BufferedWriter(new FileWriter(fullPath, true))) {
             writer.write(Integer.toString(moteNumber)+" "+Integer.toString(timestep)+" "+Double.toString(variable));
             writer.newLine(); // adds a newline
         } catch (IOException e) {
             e.printStackTrace();
         }
+	}
+	
+	/**
+	 * Append MIS bounds to output file in format "timestep mis_lower mis_upper"
+	 * @param timestep Current timestep
+	 * @param lowerBound Lower bound of MIS
+	 * @param upperBound Upper bound of MIS
+	 */
+	private void appendMISBoundsToFile(int timestep, double lowerBound, double upperBound) {
+		try {
+			// Use configured output directory
+			File file = new File(outputDirectory, "MISBounds.txt");
+			// Ensure parent directory exists
+			if (file.getParentFile() != null && !file.getParentFile().exists()) {
+				file.getParentFile().mkdirs();
+			}
+			try (BufferedWriter writer = new BufferedWriter(new FileWriter(file, true))) {
+				writer.write(Integer.toString(timestep) + " " + Double.toString(lowerBound) + " " + Double.toString(upperBound));
+				writer.newLine();
+				writer.flush(); // Ensure data is written immediately
+			}
+		} catch (IOException e) {
+			System.err.println("Error writing MIS bounds to file at timestep " + timestep + ": " + e.getMessage());
+			System.err.println("Current working directory: " + System.getProperty("user.dir"));
+			e.printStackTrace();
+		}
 	}
 	
 	/**
@@ -261,7 +313,6 @@ public class DeltaIOTConnector {
 	private double calculateAndStoreMIS(double[][][] transitionBeliefPrior, double[][][] transitionBeliefPosterior, int action, int nextstate, int moteId, int timestep) {
 		/// 1. CALCULATE PRIOR ENTROPY (uncertainty before observing the transition)
 		double priorEntropy = this.getMoteEntropy(transitionBeliefPrior, action, nextstate);
-		
 		/// 2. CALCULATE POSTERIOR ENTROPY (uncertainty after observing the transition)
 		double posteriorEntropy = this.getMoteEntropy(transitionBeliefPosterior, action, nextstate);
 
@@ -282,6 +333,32 @@ public class DeltaIOTConnector {
 		if (history.size() > lookback) {
 			// MIS = MI[current] - MI[current - lookback]
 			mis = history.get(history.size() - 1) - history.get(history.size() - 1 - lookback);
+
+			// Calculate upper and lower bounds of MIS according to Theorem 1
+			// Theorem 1: Î_{n+m} - Î_n ∈ (log(m + n) - log n) ± (2m log(2/ρ) log(m + n)) / (m + n)
+			// Where: m = lookback, n = history.size() - lookback (earlier timestep), n+m = history.size() (current)
+			double rho = 0.05; // Confidence level that true MIS value lies within copmuted bounds (0.05 -> 95% confidence)
+			int n = history.size() - lookback;  // Earlier timestep index
+			int m = lookback;                    // Lookback period
+			int nPlusM = history.size();        // Current timestep (n + m)
+			
+			// Pivot value: log(m + n) - log(n) = log(n+m) - log(n)
+			double pivotVal = Math.log(nPlusM) - Math.log(n);
+			
+			// Error term: sqrt(2m log(2/ρ)) * log(m + n) / (m + n)
+			double errorTerm = Math.sqrt((2.0 * m * Math.log(2.0 / rho))) * Math.log(nPlusM) / nPlusM;
+			
+			// Calculate bounds
+			double upperBound = pivotVal + errorTerm;
+			double lowerBound = pivotVal - errorTerm;
+			
+			// Store bounds in file: format "timestep mis_lower mis_upper"
+			// Only write once per timestep (not per mote) to avoid duplicates
+			// Use the first mote that has enough history for this timestep to write the bounds
+			if (timestep > lastBoundsTimestep) {
+				appendMISBoundsToFile(timestep, lowerBound, upperBound);
+				lastBoundsTimestep = timestep;
+			}
 		}
 		// If not enough history, return 0.0 (no surprise yet)
 		
@@ -330,8 +407,7 @@ public class DeltaIOTConnector {
 		// bayesFactorSurprise already returns a log value, so don't take log again
 		double logSurpriseBF = Math.max(Math.log(this.eps), bayesFactorSurprise(p.transitionBeliefCurr, p.transitionBeliefReset, action, nextstate));
 		double currentMIS = calculateAndStoreMIS(p.transitionBeliefCurr, transitionBeliefCurrTemp, action, nextstate, DeltaIOTConnector.selectedmote.getMoteid(), DeltaIOTConnector.timestep);		
-		double logSurpriseMIS = Math.log(Math.max(this.eps, Math.abs(currentMIS)));
-
+		
 		double logSurprise = 0.0;
 		if (surpriseMeasureForGamma.equals("CC")) {
 			logSurprise = logSurpriseCC;
@@ -340,7 +416,13 @@ public class DeltaIOTConnector {
 		} else if (surpriseMeasureForGamma.equals("MIS")) {
 			// MIS < 0 => over-exploitation, so we are gaining no new information. Retreat to a more vague prior to open up exploration
 			// MIS > 0 => over-exploration, so we are gaining new information. Continue to explore the current transition belief
-			logSurprise = logSurpriseMIS;
+			// For MIS, we need to handle the sign: positive MIS means high surprise (more learning), negative means low surprise (less learning)
+			// Use absolute value for magnitude, but scale appropriately to avoid log(0) issues
+			double absMIS = Math.abs(currentMIS);
+			// Add a small offset to prevent log(0) when MIS is exactly 0, but scale it so small MIS values still produce reasonable gamma
+			// Use 1e-6 as minimum to ensure gamma can still be computed meaningfully
+			double scaledMIS = Math.max(1e-6, absMIS);
+			logSurprise = Math.log(scaledMIS);
 		}
 
 		// Predefined rate m dictates how much model changes
@@ -351,14 +433,17 @@ public class DeltaIOTConnector {
 
 		// varSMiLE gamma formula: gamma = 1 / (1 + exp(-logSurprise) / m)
 		// This ensures: high surprise -> high gamma (more learning), low surprise -> low gamma (less learning)
-		//double gamma = 1.0 / (1.0 + Math.max(this.eps, Math.exp(-logSurprise)) / m);
-		double gamma = (m * Math.exp(logSurprise)) / (1 + m * Math.exp(logSurprise));
+		// Use the original formula which is more numerically stable
+		double gamma = 1.0 / (1.0 + Math.exp(-logSurprise) / m);
+		// Ensure gamma has a minimum value to allow some learning even when surprise is very low
+		// Minimum gamma of 0.01 ensures some learning always occurs, preventing complete stagnation
+		gamma = Math.max(0.0001, gamma);
 		assert gamma >= 0.0 && gamma <= 1.0;
 		
-		appendToFile("output_dir/surpriseBF.txt", Math.exp(logSurpriseBF), DeltaIOTConnector.selectedmote.getMoteid(), DeltaIOTConnector.timestep);
-		appendToFile("output_dir/gamma.txt", gamma, DeltaIOTConnector.selectedmote.getMoteid(), DeltaIOTConnector.timestep);
-		appendToFile("output_dir/surpriseCC.txt", Math.exp(logSurpriseCC), DeltaIOTConnector.selectedmote.getMoteid(), DeltaIOTConnector.timestep);
-		appendToFile("output_dir/surpriseMIS.txt", currentMIS, DeltaIOTConnector.selectedmote.getMoteid(), DeltaIOTConnector.timestep);
+		appendToFile(new File(outputDirectory, "surpriseBF.txt").getPath(), Math.exp(logSurpriseBF), DeltaIOTConnector.selectedmote.getMoteid(), DeltaIOTConnector.timestep);
+		appendToFile(new File(outputDirectory, "gamma.txt").getPath(), gamma, DeltaIOTConnector.selectedmote.getMoteid(), DeltaIOTConnector.timestep);
+		appendToFile(new File(outputDirectory, "surpriseCC.txt").getPath(), Math.exp(logSurpriseCC), DeltaIOTConnector.selectedmote.getMoteid(), DeltaIOTConnector.timestep);
+		appendToFile(new File(outputDirectory, "surpriseMIS.txt").getPath(), currentMIS, DeltaIOTConnector.selectedmote.getMoteid(), DeltaIOTConnector.timestep);
 
 		// varSMiLE updating of transitionBeliefCurr
 		// The varSMiLE rule: new_belief = (1-gamma) * updated_current + gamma * updated_flat_prior

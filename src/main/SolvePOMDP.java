@@ -549,21 +549,24 @@ public class SolvePOMDP {
 		
 		try
 		{
-		fwMECSatProb = new FileWriter("output_dir/MECSatProb.txt"); // Logs the probability that MEC is satisfied 
+		// Use configured output directory instead of hardcoded path
+		String outputDir = sp.getOutputDir();
+		
+		fwMECSatProb = new FileWriter(new File(outputDir, "MECSatProb.txt").getPath()); // Logs the probability that MEC is satisfied 
 		pwMECSatProb = new PrintWriter(fwMECSatProb);
-		fwRPLSatProb = new FileWriter("output_dir/RPLSatProb.txt"); // Logs the probability that RPL is satisfied
+		fwRPLSatProb = new FileWriter(new File(outputDir, "RPLSatProb.txt").getPath()); // Logs the probability that RPL is satisfied
 		pwRPLSatProb = new PrintWriter(fwRPLSatProb);
 		
-		fwMECSat = new FileWriter("output_dir/MECSat.txt"); // Logs the MECSat value
+		fwMECSat = new FileWriter(new File(outputDir, "MECSat.txt").getPath()); // Logs the MECSat value
 		pwMECSat = new PrintWriter(fwMECSat);
-		fwRPLSat = new FileWriter("output_dir/RPLSat.txt"); // Logs the RPLSat value
+		fwRPLSat = new FileWriter(new File(outputDir, "RPLSat.txt").getPath()); // Logs the RPLSat value
 		pwRPLSat = new PrintWriter(fwRPLSat);
-		fwaction = new FileWriter("output_dir/SelectedAction.txt"); // Logs which action is taken increase or decrease power)
+		fwaction = new FileWriter(new File(outputDir, "SelectedAction.txt").getPath()); // Logs which action is taken increase or decrease power)
 		pwaction = new PrintWriter(fwaction);
 		
-		fwMECSattimestep = new FileWriter("output_dir/MECSattimestep.txt"); // At specific timesteps
+		fwMECSattimestep = new FileWriter(new File(outputDir, "MECSattimestep.txt").getPath()); // At specific timesteps
 		pwMECSattimestep = new PrintWriter(fwMECSattimestep);
-		fwRPLSattimestep = new FileWriter("output_dir/RPLSattimestep.txt");
+		fwRPLSattimestep = new FileWriter(new File(outputDir, "RPLSattimestep.txt").getPath());
 		pwRPLSattimestep = new PrintWriter(fwRPLSattimestep);
 		
 		JsonArray rlist = new JsonArray();
@@ -578,7 +581,7 @@ public class SolvePOMDP {
 		}
 		POMDP pomdp = PomdpParser.readPOMDP(pomdpFile.getAbsolutePath());
 		
-		int numTimesteps = 200;
+		int numTimesteps = 400;
 		// set alpha-vectors here (in future can have in POMDP file)
 		iot.DeltaIOTConnector.p=pomdp;		
 		
@@ -587,19 +590,26 @@ public class SolvePOMDP {
 		iot.DeltaIOTConnector.networkMgmt = new SimulationClient();
 		
 		iot.DeltaIOTConnector deltaConnector = new iot.DeltaIOTConnector();
-		deltaConnector.clearFile("output_dir/gamma.txt");
-		deltaConnector.clearFile("output_dir/surpriseBF.txt");
-		deltaConnector.clearFile("output_dir/surpriseCC.txt");
-		deltaConnector.clearFile("output_dir/surpriseMIS.txt");
+		// Set output directory for DeltaIOTConnector to use
+		deltaConnector.setOutputDirectory(outputDir);
+		deltaConnector.clearFile(new File(outputDir, "gamma.txt").getPath());
+		deltaConnector.clearFile(new File(outputDir, "surpriseBF.txt").getPath());
+		deltaConnector.clearFile(new File(outputDir, "surpriseCC.txt").getPath());
+		deltaConnector.clearFile(new File(outputDir, "surpriseMIS.txt").getPath());
+		deltaConnector.clearFile(new File(outputDir, "MISBounds.txt").getPath());
 
 		// Initialize timestepiot to 0. This tracks the run number for QoS retrieval.
 		// The simulator uses 1-indexed run numbers, so run number = timestepiot + 1
 		// After each doSingleRun(), timestepiot is incremented to match the created run
 		iot.DeltaIOTConnector.timestepiot = 0;
+		// Initialize timestep to 0 (monotonic increment only for timestep)
+		iot.DeltaIOTConnector.timestep = 0;
 		// set surprise measure for gamma calculation
 		deltaConnector.setSurpriseMeasureForGamma("MIS");
 		
 		for (int timestep = 0; timestep < numTimesteps; timestep++) {
+			// Set the static timestep variable to current loop timestep for use in MIS calculation
+			iot.DeltaIOTConnector.timestep = timestep;
 			/*
 			 * MONITOR
 			 */
@@ -799,7 +809,10 @@ public class SolvePOMDP {
 			 	} else {
 			 		System.err.println("Warning: Using default QoS values (packetLoss=0.0, energyConsumption=0.0)");
 			 	}
-			 	System.out.println("packet loss: "+packetLoss+"   Energy Consumption: "+energyConsumption);
+			 	// Reduced logging frequency - only log every 50 timesteps to reduce console spam
+			 	if (timestep % 50 == 0) {
+			 		System.out.println("packet loss: "+packetLoss+"   Energy Consumption: "+energyConsumption);
+			 	}
 			 	
 			 	pwMECSat.println(moteIndex+" "+timestep+" "+energyConsumption);
 			 	pwRPLSat.println(moteIndex+" "+timestep+" "+packetLoss);
@@ -822,26 +835,48 @@ public class SolvePOMDP {
 			// (3) Energy consumption of the network
 			ArrayList<QoS> result1 = (ArrayList<QoS>)DeltaIOTConnector.networkMgmt.getSimulator().getQosValues();
 			
+			// Validate that we have QoS data before accessing it
+			if (result1 == null || result1.isEmpty()) {
+				System.err.println("Warning: getQosValues() returned empty or null at timestep " + timestep);
+				System.err.println("Skipping timestep-level file write for timestep " + timestep);
+				continue; // Skip this timestep's file write
+			}
+			
 			// Total packet loss and energy consumption across every mote in the network
-			double pl1=result1.get(result1.size()-1).getPacketLoss();
-			double ec1=result1.get(result1.size()-1).getEnergyConsumption();
+			// Use the last entry in the QoS list, which represents the most recent network-wide QoS
+			int lastIndex = result1.size() - 1;
+			QoS lastQoS = result1.get(lastIndex);
+			
+			if (lastQoS == null) {
+				System.err.println("Warning: Last QoS entry is null at timestep " + timestep);
+				System.err.println("QoS list size: " + result1.size());
+				continue; // Skip this timestep's file write
+			}
+			
+			double pl1 = lastQoS.getPacketLoss();
+			double ec1 = lastQoS.getEnergyConsumption();
+			
 			plstimestep = timestep+" ";
 			ecstimestep = timestep+" ";
 			plstimestep = plstimestep+pl1;
 			ecstimestep = ecstimestep+ec1;
 			
-			System.out.println("packet loss: "+plstimestep+"energy consumption"+ecstimestep);
+			// Reduced logging frequency - only log every 50 timesteps to reduce console spam
+			if (timestep % 50 == 0) {
+				System.out.println("packet loss: "+plstimestep+"energy consumption"+ecstimestep);
+			}
+			
+			// Write to timestep-level files
 			pwMECSattimestep.println(ecstimestep);
 			pwRPLSattimestep.println(plstimestep);
 			pwMECSattimestep.flush();
 			pwRPLSattimestep.flush();
 			
-			iot.DeltaIOTConnector.timestep++;
+			// Note: DeltaIOTConnector.timestep is set at the start of each loop iteration
+			// No need to increment here as it's set from the loop variable
 		}
 		
 		// print results
-		// Use File constructor to properly join paths and handle absolute paths
-		File outputDir = new File(sp.getOutputDir());
 		String outputFilePG = new File(outputDir, pomdp.getInstanceName() + ".pg").getAbsolutePath();
 		String outputFileAlpha = new File(outputDir, pomdp.getInstanceName() + ".alpha").getAbsolutePath();
 		System.out.println();
@@ -853,7 +888,13 @@ public class SolvePOMDP {
 		}
 		catch(IOException ioex)
 		{
+			System.err.println("IOException caught in runCaseIoT:");
 			ioex.printStackTrace();
+		}
+		catch(Exception ex)
+		{
+			System.err.println("Unexpected exception caught in runCaseIoT:");
+			ex.printStackTrace();
 		}
 		finally
 		{
