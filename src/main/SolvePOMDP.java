@@ -605,7 +605,7 @@ public class SolvePOMDP {
 		// Initialize timestep to 0 (monotonic increment only for timestep)
 		iot.DeltaIOTConnector.timestep = 0;
 		// set surprise measure for gamma calculation
-		deltaConnector.setSurpriseMeasureForGamma("MIS");
+		deltaConnector.setSurpriseMeasureForGamma("BF");
 		
 		for (int timestep = 0; timestep < numTimesteps; timestep++) {
 			// Set the static timestep variable to current loop timestep for use in MIS calculation

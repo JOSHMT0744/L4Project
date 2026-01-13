@@ -46,7 +46,7 @@ def satisfactionPlots(df):
             x=df["timestep"],
             y=df["mecsattimestep"],
             mode="lines",
-            name="MECS Satisfaction",
+            name="MEC Satisfaction",
         ),
         row=1,
         col=1,

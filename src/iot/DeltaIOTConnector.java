@@ -248,8 +248,9 @@ public class DeltaIOTConnector {
 	 * @return The entropy of the mote's transition belief
 	 */
 	private double getMoteEntropy(double[][][] transitionBelief, int action, int nextstate) {
-		// MUTUAL INFORMATION CALCULATION
-		// iterate through each dirichlet distribution 
+		// Calculate expected entropy: iterate over all current states
+		// For each current state, compute the entropy of the Dirichlet distribution over next states
+		// Weight by the belief over current states
 		double entropy = 0.0;
 		for (int stateIndex = 0; stateIndex < p.getNumStates(); stateIndex++) {
 			// as we want to know total entropy of the transition beliefs, rather than just the transition entropy, we will be iterating over all possible next states
@@ -339,7 +340,7 @@ public class DeltaIOTConnector {
 			// Where: m = lookback, n = history.size() - lookback (earlier timestep), n+m = history.size() (current)
 			double rho = 0.05; // Confidence level that true MIS value lies within copmuted bounds (0.05 -> 95% confidence)
 			int n = history.size() - lookback;  // Earlier timestep index
-			int m = lookback;                    // Lookback period
+			int m = lookback;                   // Lookback period
 			int nPlusM = history.size();        // Current timestep (n + m)
 			
 			// Pivot value: log(m + n) - log(n) = log(n+m) - log(n)
@@ -429,10 +430,11 @@ public class DeltaIOTConnector {
 		assert p_c >= 0 && p_c < 1;
 		double m = p_c / (1 - p_c);
 
-		// varSMiLE gamma formula: gamma = 1 / (1 + exp(-logSurprise) / m)
-		// This ensures: high surprise -> high gamma (more learning), low surprise -> low gamma (less learning)
-		// Use the original formula which is more numerically stable
-		double gamma = 1.0 / (1.0 + Math.exp(-logSurprise) / m);
+		// varSMiLE gamma formula (Definition 4): gamma(S, m) = mS / (1 + mS)
+		// Equivalent form: gamma = 1 / (1 + 1/(m*S)) where S = exp(logSurprise)
+		// This ensures: high surprise -> high gamma (less learning), low surprise -> low gamma (more learning)
+		// This form is numerically stable and equivalent to mS/(1+mS)
+		double gamma = 1.0 / (1.0 + (1/ (m*Math.exp(logSurprise))));
 		// Ensure gamma has a minimum value to allow some learning even when surprise is very low
 		gamma = Math.max(this.eps, gamma);
 		assert gamma >= 0.0 && gamma <= 1.0;
