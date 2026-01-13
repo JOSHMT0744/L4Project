@@ -292,7 +292,7 @@ public class SolvePOMDP {
 			case "erperseus":
 				this.solver = new ERPerseus(sp, new Random(222), 0.5);
 				break;
-			case "faserpbvi":
+			case "fasterpbvi":
 				this.solver = new fastERPBVI(sp, new Random(222), 0.5, false);
 				break;
 			case "erpbvi":
@@ -581,7 +581,7 @@ public class SolvePOMDP {
 		}
 		POMDP pomdp = PomdpParser.readPOMDP(pomdpFile.getAbsolutePath());
 		
-		int numTimesteps = 400;
+		int numTimesteps = 500;
 		// set alpha-vectors here (in future can have in POMDP file)
 		iot.DeltaIOTConnector.p=pomdp;		
 		

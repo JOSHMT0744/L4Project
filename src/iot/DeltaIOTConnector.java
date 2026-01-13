@@ -68,7 +68,7 @@ public class DeltaIOTConnector {
 	
 	public DeltaIOTConnector() {
 		selectedindex=0;
-		eps = 1e-300; // prevent underflow
+		eps = 1e-6; // prevent underflow
 		miHistory = new HashMap<Integer, ArrayList<Double>>();
 		//stopwatchiot = StopWatch.getGlobalStopWatch();		
 	}
@@ -405,7 +405,7 @@ public class DeltaIOTConnector {
 		double surpriseCC = confidenceCorrectedSurprise(p.transitionBeliefCurr, transitionBeliefResetTemp, action, nextstate);
 		double logSurpriseCC = Math.log(Math.max(this.eps, surpriseCC));
 		// bayesFactorSurprise already returns a log value, so don't take log again
-		double logSurpriseBF = Math.max(Math.log(this.eps), bayesFactorSurprise(p.transitionBeliefCurr, p.transitionBeliefReset, action, nextstate));
+		double logSurpriseBF = Math.max(this.eps, bayesFactorSurprise(p.transitionBeliefCurr, p.transitionBeliefReset, action, nextstate));
 		double currentMIS = calculateAndStoreMIS(p.transitionBeliefCurr, transitionBeliefCurrTemp, action, nextstate, DeltaIOTConnector.selectedmote.getMoteid(), DeltaIOTConnector.timestep);		
 		
 		double logSurprise = 0.0;
@@ -417,11 +417,9 @@ public class DeltaIOTConnector {
 			// MIS < 0 => over-exploitation, so we are gaining no new information. Retreat to a more vague prior to open up exploration
 			// MIS > 0 => over-exploration, so we are gaining new information. Continue to explore the current transition belief
 			// For MIS, we need to handle the sign: positive MIS means high surprise (more learning), negative means low surprise (less learning)
-			// Use absolute value for magnitude, but scale appropriately to avoid log(0) issues
 			double absMIS = Math.abs(currentMIS);
 			// Add a small offset to prevent log(0) when MIS is exactly 0, but scale it so small MIS values still produce reasonable gamma
-			// Use 1e-6 as minimum to ensure gamma can still be computed meaningfully
-			double scaledMIS = Math.max(1e-6, absMIS);
+			double scaledMIS = Math.max(this.eps, absMIS);
 			logSurprise = Math.log(scaledMIS);
 		}
 
@@ -436,8 +434,7 @@ public class DeltaIOTConnector {
 		// Use the original formula which is more numerically stable
 		double gamma = 1.0 / (1.0 + Math.exp(-logSurprise) / m);
 		// Ensure gamma has a minimum value to allow some learning even when surprise is very low
-		// Minimum gamma of 0.01 ensures some learning always occurs, preventing complete stagnation
-		gamma = Math.max(0.0001, gamma);
+		gamma = Math.max(this.eps, gamma);
 		assert gamma >= 0.0 && gamma <= 1.0;
 		
 		appendToFile(new File(outputDirectory, "surpriseBF.txt").getPath(), Math.exp(logSurpriseBF), DeltaIOTConnector.selectedmote.getMoteid(), DeltaIOTConnector.timestep);
