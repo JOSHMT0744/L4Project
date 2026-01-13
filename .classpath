@@ -6,7 +6,6 @@
 		</attributes>
 	</classpathentry>
 	<classpathentry excluding="domains/" kind="src" path="src"/>
-	<classpathentry excluding="src/" kind="src" path=""/>
 	<classpathentry kind="lib" path="C:/Users/Dell/eclipse-workspace/L4Project/libraries/antlr-runtime-3.5.2.jar">
 		<attributes>
 			<attribute name="module" value="true"/>
@@ -58,6 +57,11 @@
 		</attributes>
 	</classpathentry>
 	<classpathentry kind="lib" path="C:/Users/Dell/eclipse-workspace/L4Project/libraries/Simulator.jar">
+		<attributes>
+			<attribute name="module" value="true"/>
+		</attributes>
+	</classpathentry>
+	<classpathentry kind="lib" path="C:/Users/Dell/eclipse-workspace/L4Project/libraries/jython-standalone-2.7.4.jar">
 		<attributes>
 			<attribute name="module" value="true"/>
 		</attributes>

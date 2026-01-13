@@ -219,27 +219,33 @@ public class PomdpParser {
 		// Initialising beliefs		
 		double[][][] transitionBeliefCurr = new double[numStates][numActions][numStates];
 		double[][][] transitionBeliefReset = new double[numStates][numActions][numStates];
+		double[][][] observationBelief = new double[numActions][numStates][numObservations];
 		assert transitionFunction != null;
 		
 		for (int stateIndex = 0; stateIndex < numStates; stateIndex++) {
 			for (int actionIndex = 0; actionIndex < numActions; actionIndex++) {
-				//System.arraycopy(transitionFunction[stateIndex][actionIndex], 0, transitionBeliefCurr[stateIndex][actionIndex], 0, numStates);#
+				System.arraycopy(transitionFunction[stateIndex][actionIndex], 0, transitionBeliefCurr[stateIndex][actionIndex], 0, numStates);
 				Arrays.fill(transitionBeliefCurr[stateIndex][actionIndex], 1.0);
-				Arrays.fill(transitionBeliefReset[stateIndex][actionIndex], 1.0); // / Double.valueOf(numStates));
+				Arrays.fill(transitionBeliefReset[stateIndex][actionIndex], 1.0);
+			}
+		}
+		
+		for (int actionIndex = 0; actionIndex < numActions; actionIndex++) {
+			for (int stateIndex = 0; stateIndex < numStates; stateIndex++) {
+				// Enforcing full BA-POMDP by turning observationFunction into a Dirichlet too
+				Arrays.fill(observationBelief[actionIndex][stateIndex], 1.0);
 			}
 		}
 
 		 // As each value of transition belief is initially a probability, adjust this to be a minimum of 1, and scale all other values accordingly
-		/*
-		 for (int stateIndex = 0; stateIndex < numStates; stateIndex++) {
-				for (int actionIndex = 0; actionIndex < numActions; actionIndex++) {
-					double alphaMin = Arrays.stream(transitionBeliefCurr[stateIndex][actionIndex]).min().getAsDouble();
-					for (int nextStateIndex = 0; nextStateIndex < numStates; nextStateIndex++) {
-						transitionBeliefCurr[stateIndex][actionIndex][nextStateIndex] = transitionBeliefCurr[stateIndex][actionIndex][nextStateIndex] * Double.valueOf(2*numStates);
-					}
-				}
-			}
-			*/
+		//  for (int stateIndex = 0; stateIndex < numStates; stateIndex++) {
+		// 		for (int actionIndex = 0; actionIndex < numActions; actionIndex++) {
+		// 			double alphaMin = Arrays.stream(transitionBeliefCurr[stateIndex][actionIndex]).min().getAsDouble();
+		// 			for (int nextStateIndex = 0; nextStateIndex < numStates; nextStateIndex++) {
+		// 				transitionBeliefCurr[stateIndex][actionIndex][nextStateIndex] = transitionBeliefCurr[stateIndex][actionIndex][nextStateIndex] * Double.valueOf(2*numStates);
+		// 			}
+		// 		}
+		// 	}
 
 		 
 		 System.out.println("Starting transition curr belief: ");
@@ -258,7 +264,9 @@ public class PomdpParser {
 				actionLabels, 
 				b0,
 				transitionBeliefReset,
-				transitionBeliefCurr);				
+				transitionBeliefCurr,
+				observationBelief		
+				);				
 		}
 }
 
