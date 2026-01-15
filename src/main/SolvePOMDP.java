@@ -40,6 +40,7 @@ import com.github.cliftonlabs.json_simple.JsonObject;
 import deltaiot.client.SimulationClient;
 import deltaiot.services.Mote;
 import iot.DeltaIOTConnector;
+import iot.NoiseInjector;
 import pomdp.POMDP;
 import pomdp.PomdpParser;
 import pomdp.SolverProperties;
@@ -252,7 +253,7 @@ public class SolvePOMDP {
 		sp.setValueFunctionTolerance(Double.parseDouble(getPropertyOrThrow(properties, "valueFunctionTolerance")));
 
 		// Error checking solver.config parameters
-		if(!algorithmType.equals("perseus") && !algorithmType.equals("gip") && !algorithmType.equals("erpbvi")) {
+		if(!algorithmType.equals("perseus") && !algorithmType.equals("gip") && !algorithmType.equals("erpbvi") && !algorithmType.equals("erperseus")) {
 			throw new RuntimeException("Unexpected algorithm type in properties file");
 		}
 		
@@ -581,7 +582,7 @@ public class SolvePOMDP {
 		}
 		POMDP pomdp = PomdpParser.readPOMDP(pomdpFile.getAbsolutePath());
 		
-		int numTimesteps = 500;
+		int numTimesteps = 400;
 		// set alpha-vectors here (in future can have in POMDP file)
 		iot.DeltaIOTConnector.p=pomdp;		
 		
@@ -590,6 +591,15 @@ public class SolvePOMDP {
 		iot.DeltaIOTConnector.networkMgmt = new SimulationClient();
 		
 		iot.DeltaIOTConnector deltaConnector = new iot.DeltaIOTConnector();
+		
+		// set noise injector
+		NoiseInjector noiseInjector = new NoiseInjector();
+		noiseInjector.setEnabled(true);
+		noiseInjector.setLinkFailureEnabled(false);
+		noiseInjector.setMoteFailureEnabled(false);
+		noiseInjector.setSeed(42);
+		deltaConnector.setNoiseInjector(noiseInjector);
+
 		// Set output directory for DeltaIOTConnector to use
 		deltaConnector.setOutputDirectory(outputDir);
 		deltaConnector.clearFile(new File(outputDir, "gamma.txt").getPath());
@@ -605,11 +615,23 @@ public class SolvePOMDP {
 		// Initialize timestep to 0 (monotonic increment only for timestep)
 		iot.DeltaIOTConnector.timestep = 0;
 		// set surprise measure for gamma calculation
-		deltaConnector.setSurpriseMeasureForGamma("BF");
+		deltaConnector.setSurpriseMeasureForGamma("MIS");
 		
 		for (int timestep = 0; timestep < numTimesteps; timestep++) {
 			// Set the static timestep variable to current loop timestep for use in MIS calculation
 			iot.DeltaIOTConnector.timestep = timestep;
+			
+			// update failure states if noise injector is enabled
+			if (deltaConnector.getNoiseInjector() != null) {
+				deltaConnector.getNoiseInjector().updateFailures(
+					iot.DeltaIOTConnector.motes, timestep);
+			}
+
+			// set failure for mote 10 at timestep 60
+			if (timestep == 240) {
+				noiseInjector.turnMoteOff(10);
+			}
+			
 			/*
 			 * MONITOR
 			 */
@@ -618,6 +640,12 @@ public class SolvePOMDP {
 
 			iot.DeltaIOTConnector.motes = iot.DeltaIOTConnector.networkMgmt.getProbe().getAllMotes();
 			System.out.println("motes recieved");
+			
+			// Log comprehensive metrics for all motes at this timestep
+			// This captures the network state before any actions are taken
+			for (Mote mote : iot.DeltaIOTConnector.motes) {
+				deltaConnector.logMoteAndLinkMetrics(mote, timestep);
+			}
 
 			// For timestep 0, no runs exist yet, so use default state 0
 			// For timestep > 0, getInitialState() can safely access run 1 which exists from previous timesteps
@@ -641,7 +669,8 @@ public class SolvePOMDP {
 				moteIndexes[i] = i;
 			}
 			// Fisher–Yates shuffle
-			Random random = new Random();
+			// Use a seed based on timestep to make shuffle deterministic but still vary by timestep
+			Random random = new Random(222 + timestep);
 			for (int i = numMotes - 1; i > 0; i--) {
 			    int j = random.nextInt(i + 1);
 			    int tmp = moteIndexes[i];
@@ -651,6 +680,11 @@ public class SolvePOMDP {
 			// End of randomised motes
 			
 			for(int moteIndex : moteIndexes) {
+				// Skip failed motes
+				if (noiseInjector != null && noiseInjector.isMoteOff(moteIndex)) {
+					continue;
+				}
+
 				Mote m = iot.DeltaIOTConnector.motes.get(moteIndex);
 				System.out.println("\nTime Step: "+timestep);
 				// Simulator object holds the list of motes, gateways, turnOrder, runInfo and qos values.
@@ -686,10 +720,10 @@ public class SolvePOMDP {
 				obj.put("Mote Id", iot.DeltaIOTConnector.selectedmote.getMoteid()+"");		
 			
 				BeliefPoint initialbelief = pomdp.getInitialBelief(); // b0
-				double b[] = initialbelief.getBelief();
-				System.out.println(b[0]+" "+b[1]+" "+b[2]+" "+b[3]);
-				double mecsatprob = b[0]+b[1]; // Sum of all states in which MEC is satisfied
-				double rplsatprob = b[0]+b[2];
+				double beliefValues[] = initialbelief.getBelief();
+				System.out.println(beliefValues[0]+" "+beliefValues[1]+" "+beliefValues[2]+" "+beliefValues[3]);
+				double mecsatprob = beliefValues[0]+beliefValues[1]; // Sum of all states in which MEC is satisfied
+				double rplsatprob = beliefValues[0]+beliefValues[2];
 				pwMECSatProb.println(moteIndex+" "+timestep+" "+mecsatprob);
 				pwRPLSatProb.println(moteIndex+" "+timestep+" "+rplsatprob);
 				pwMECSatProb.flush();
@@ -717,12 +751,7 @@ public class SolvePOMDP {
 				// Standard action selection for other solvers
 				int bestindex = AlphaVector.getBestVectorIndex(pomdp.getInitialBelief().getBelief(), V1);
 				selectedAction = V1.get(bestindex).getAction();
-				System.out.println("Selected Action: " + selectedAction);
-			
-				// Put knowledge update here?
-				// Really, want this function in the deltaiotconnector, as we want it triggered before belief is updated. 
-				// Otherwise, we are comparing the posterior belief rather than the prior
-				
+				System.out.println("Selected Action: " + selectedAction);				
 				
 				pwaction.println(timestep+" "+selectedAction);
 				pwaction.flush();
@@ -797,6 +826,7 @@ public class SolvePOMDP {
 				if (result != null && !result.isEmpty()) {
 					System.out.println("QOS list size: "+result.size());
 				}
+				
 			 	/*
 			 	 * MONITOR
 			 	 */

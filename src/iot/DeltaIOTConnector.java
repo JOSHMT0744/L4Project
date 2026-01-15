@@ -52,12 +52,27 @@ public class DeltaIOTConnector {
 	// Track which timesteps have already had bounds written (to avoid duplicates)
 	private int lastBoundsTimestep = -1;
 	
+	// Track if header has been written to mote_metrics.txt
+	private static boolean moteMetricsHeaderWritten = false;
+	
 	// Surprise measure to use for gamma calculation: "CC" (Confidence-Corrected), "BF" (Bayes Factor), or "MIS" (Mutual Information Surprise)
 	private String surpriseMeasureForGamma = "CC"; // Default to Confidence-Corrected Surprise
 	
 	// Output directory for file operations
 	private String outputDirectory = "L4Project/output_dir"; // Default, will be set by SolvePOMDP
 	
+	// class for causing breakages in the network
+	private NoiseInjector noiseInjector;
+
+
+	public void setNoiseInjector(NoiseInjector noiseInjector) {
+		this.noiseInjector = noiseInjector;
+	}
+
+	public NoiseInjector getNoiseInjector() {
+		return this.noiseInjector;
+	}
+
 	public void setOutputDirectory(String outputDir) {
 		this.outputDirectory = outputDir;
 	}
@@ -273,6 +288,90 @@ public class DeltaIOTConnector {
 	}
 	
 	/**
+	 * Logs comprehensive metrics for a mote and all its links at a given timestep.
+	 * Logs to a single comprehensive file with format: timestep moteId linkIndex source dest snr power distribution sf
+	 * If a mote has no links, logs a single line with linkIndex=-1 and other link fields as -1 or N/A.
+	 * 
+	 * @param mote The mote to log metrics for
+	 * @param timestep The current timestep
+	 */
+	public void logMoteAndLinkMetrics(Mote mote, int timestep) {
+		if (mote == null) {
+			System.err.println("Warning: Attempted to log metrics for null mote at timestep " + timestep);
+			return;
+		}
+		
+		try {
+			File file = new File(outputDirectory, "mote_metrics.txt");
+			// Ensure parent directory exists
+			if (file.getParentFile() != null && !file.getParentFile().exists()) {
+				file.getParentFile().mkdirs();
+			}
+			
+			// Write header on first write
+			boolean writeHeader = !moteMetricsHeaderWritten && !file.exists();
+			
+			try (BufferedWriter writer = new BufferedWriter(new FileWriter(file, true))) {
+				// Write header if this is the first write
+				if (writeHeader) {
+					writer.write("timestep moteId linkIndex source dest snr power distribution sf");
+					writer.newLine();
+					moteMetricsHeaderWritten = true;
+				}
+				int moteId = mote.getMoteid();
+				List<Link> links = mote.getLinks();
+				
+				if (links == null || links.isEmpty()) {
+					// Log mote with no links
+					writer.write(String.format("%d %d %d %d %d %.6f %d %d %d",
+						timestep, moteId, -1, -1, -1, Double.NaN, -1, -1, -1));
+					writer.newLine();
+				} else {
+					// Log each link
+					for (int linkIndex = 0; linkIndex < links.size(); linkIndex++) {
+						Link link = links.get(linkIndex);
+						if (link == null) {
+							// Skip null links
+							continue;
+						}
+						
+						try {
+							int source = link.getSource();
+							int dest = link.getDest();
+							double snr = link.getSNR();
+							int power = link.getPower();
+							int distribution = link.getDistribution();
+							int sf = link.getSF();
+							
+							// Format: timestep moteId linkIndex source dest snr power distribution sf
+							writer.write(String.format("%d %d %d %d %d %.6f %d %d %d",
+								timestep, moteId, linkIndex, source, dest, snr, power, distribution, sf));
+							writer.newLine();
+						} catch (Exception e) {
+							// Handle any errors accessing link properties
+							System.err.println("Warning: Error accessing link properties for mote " + moteId + 
+								", link " + linkIndex + " at timestep " + timestep + ": " + e.getMessage());
+							// Log partial data with error indicators
+							try {
+								writer.write(String.format("%d %d %d %d %d %.6f %d %d %d",
+									timestep, moteId, linkIndex, -1, -1, Double.NaN, -1, -1, -1));
+								writer.newLine();
+							} catch (IOException ioException) {
+								System.err.println("Error writing partial link data: " + ioException.getMessage());
+							}
+						}
+					}
+				}
+				writer.flush(); // Ensure data is written immediately
+			}
+		} catch (IOException e) {
+			System.err.println("Error writing mote metrics to file at timestep " + timestep + 
+				" for mote " + (mote != null ? mote.getMoteid() : "null") + ": " + e.getMessage());
+			e.printStackTrace();
+		}
+	}
+	
+	/**
 	 * Append MIS bounds to output file in format "timestep mis_lower mis_upper"
 	 * @param timestep Current timestep
 	 * @param lowerBound Lower bound of MIS
@@ -484,7 +583,6 @@ public class DeltaIOTConnector {
 		
 		BeliefPoint b = p.updateBelief(p.getInitialBelief(), action, obs); // CHANGE THIS ADAPTATION FOR THE SMILE RULE
 		
-		// Compute surprise here
 		// Despite being called initialBelief, consider this the updated current belief for states
 		p.setInitialBelief(b);
 	
@@ -494,11 +592,28 @@ public class DeltaIOTConnector {
 	
 	///SF Check
 	public void performDTP() { 		
+		// Check if mote is failed before performing actions
+		if (noiseInjector != null && noiseInjector.isMoteOff(
+			DeltaIOTConnector.selectedmote.getMoteid())) {
+				// skip this mote -> it's faild/off
+				return;
+			}
+
 		int value;
 		Link left, right;
 		int valueleft,valueright;
 
 		for(Link link : DeltaIOTConnector.selectedmote.getLinks()) {
+
+			// check if link is failed before performing actions
+			if (noiseInjector != null &&
+				noiseInjector.isLinkOff(link.getSource(), link.getDest())
+			) {
+				// Skip this link -> it's faild/off
+				// Or create settings with power = 0 to disable it
+				continue;
+			}
+
 			//DeltaIOTConnector.selectedlink=m.getLink(0);
 			DeltaIOTConnector.selectedlink = link;
 				if (DeltaIOTConnector.selectedlink.getSNR() > 0 && DeltaIOTConnector.selectedlink.getPower() > 0) {				
@@ -549,11 +664,27 @@ public class DeltaIOTConnector {
 	
 	///perform actions for simulator DeltaIOT
 	public void performITP() { 	
+		// Check if mote is failed before performing actions
+		if (noiseInjector != null && noiseInjector.isMoteOff(
+			DeltaIOTConnector.selectedmote.getMoteid())) {
+				// skip this mote -> it's faild/off
+				return;
+			}
+
 		int value;
 		Link left, right;
 		int valueleft,valueright;
 
 				for(Link link : DeltaIOTConnector.selectedmote.getLinks()) {
+
+					// check if link is failed before performing actions
+					if (noiseInjector != null &&
+						noiseInjector.isLinkOff(link.getSource(), link.getDest())
+					) {
+						// Skip this link -> it's faild/off
+						// Or create settings with power = 0 to disable it
+						continue;
+					}
 				
 					//DeltaIOTConnector.selectedlink=m.getLink(0);
 					DeltaIOTConnector.selectedlink = link;
