@@ -582,7 +582,7 @@ public class SolvePOMDP {
 		}
 		POMDP pomdp = PomdpParser.readPOMDP(pomdpFile.getAbsolutePath());
 		
-		int numTimesteps = 400;
+		int numTimesteps = 500;
 		// set alpha-vectors here (in future can have in POMDP file)
 		iot.DeltaIOTConnector.p=pomdp;		
 		
@@ -595,10 +595,14 @@ public class SolvePOMDP {
 		// set noise injector
 		NoiseInjector noiseInjector = new NoiseInjector();
 		noiseInjector.setEnabled(true);
-		noiseInjector.setLinkFailureEnabled(false);
+		noiseInjector.setLinkFailureEnabled(true);
 		noiseInjector.setMoteFailureEnabled(false);
 		noiseInjector.setSeed(42);
 		deltaConnector.setNoiseInjector(noiseInjector);
+		
+		// Set the active connector instance so POMDP.nextState() can use it
+		// This ensures the connector with properly configured noiseInjector is used
+		iot.DeltaIOTConnector.activeInstance = deltaConnector;
 
 		// Set output directory for DeltaIOTConnector to use
 		deltaConnector.setOutputDirectory(outputDir);
@@ -607,6 +611,7 @@ public class SolvePOMDP {
 		deltaConnector.clearFile(new File(outputDir, "surpriseCC.txt").getPath());
 		deltaConnector.clearFile(new File(outputDir, "surpriseMIS.txt").getPath());
 		deltaConnector.clearFile(new File(outputDir, "MISBounds.txt").getPath());
+		deltaConnector.clearMoteMetricsFile(new File(outputDir, "mote_metrics.txt").getPath());
 
 		// Initialize timestepiot to 0. This tracks the run number for QoS retrieval.
 		// The simulator uses 1-indexed run numbers, so run number = timestepiot + 1
@@ -614,9 +619,12 @@ public class SolvePOMDP {
 		iot.DeltaIOTConnector.timestepiot = 0;
 		// Initialize timestep to 0 (monotonic increment only for timestep)
 		iot.DeltaIOTConnector.timestep = 0;
-		// set surprise measure for gamma calculation
+		// set surprise measure for gamma calculation (MIS, CC, or BF)
 		deltaConnector.setSurpriseMeasureForGamma("MIS");
 		
+		// test turning a link fully of for full duration of simulation
+		noiseInjector.setLinkFailureDuration(50);	
+
 		for (int timestep = 0; timestep < numTimesteps; timestep++) {
 			// Set the static timestep variable to current loop timestep for use in MIS calculation
 			iot.DeltaIOTConnector.timestep = timestep;
@@ -628,8 +636,9 @@ public class SolvePOMDP {
 			}
 
 			// set failure for mote 10 at timestep 60
-			if (timestep == 240) {
-				noiseInjector.turnMoteOff(10);
+			if (timestep == 250) {
+				noiseInjector.turnLinkOff(7, 3);
+				noiseInjector.turnLinkOff(12, 3);
 			}
 			
 			/*
@@ -640,12 +649,6 @@ public class SolvePOMDP {
 
 			iot.DeltaIOTConnector.motes = iot.DeltaIOTConnector.networkMgmt.getProbe().getAllMotes();
 			System.out.println("motes recieved");
-			
-			// Log comprehensive metrics for all motes at this timestep
-			// This captures the network state before any actions are taken
-			for (Mote mote : iot.DeltaIOTConnector.motes) {
-				deltaConnector.logMoteAndLinkMetrics(mote, timestep);
-			}
 
 			// For timestep 0, no runs exist yet, so use default state 0
 			// For timestep > 0, getInitialState() can safely access run 1 which exists from previous timesteps
@@ -856,6 +859,15 @@ public class SolvePOMDP {
 			 	
 			}///End of Motes loop
 			
+			// Log comprehensive metrics for all motes at this timestep
+			// This captures the network state AFTER all actions have been performed
+			// Actions (performDTP/performITP) already enforce distribution=0 for failed links,
+			// so the logged metrics will accurately reflect the enforced state
+			iot.DeltaIOTConnector.motes = iot.DeltaIOTConnector.networkMgmt.getProbe().getAllMotes();
+			for (Mote mote : iot.DeltaIOTConnector.motes) {
+				deltaConnector.logMoteAndLinkMetrics(mote, timestep);
+			}
+			
 			String plstimestep = "";
 			String ecstimestep = "";
 			
@@ -902,8 +914,8 @@ public class SolvePOMDP {
 			pwMECSattimestep.flush();
 			pwRPLSattimestep.flush();
 			
-			// Note: DeltaIOTConnector.timestep is set at the start of each loop iteration
-			// No need to increment here as it's set from the loop variable
+			// Stats check for failed components
+			System.out.println(noiseInjector.getFailureStats());
 		}
 		
 		// print results

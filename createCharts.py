@@ -3,6 +3,10 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import os
+import sys
+import subprocess
+import dash
+from dash import dcc, html, Input, Output
 
 def satisfactionViolins(df):
     fig = make_subplots(
@@ -612,6 +616,460 @@ def moteMetricsTrajectories(df_mote_metrics, selected_motes=None):
     
     return fig
 
+def getUniqueMotesAndLinks(df_mote_metrics):
+    """
+    Extract unique mote IDs and link pairs from the dataframe for filter options.
+    
+    :param df_mote_metrics: DataFrame with mote metrics
+    :return: tuple of (unique_mote_ids, unique_links) where links are formatted as "source->dest"
+    """
+    # Get unique mote IDs
+    unique_motes = sorted(df_mote_metrics['moteId'].unique().tolist())
+    
+    # Get unique link pairs (source->dest)
+    # df_mote_metrics['link_id'] = df_mote_metrics['source'].astype(str) + '->' + df_mote_metrics['dest'].astype(str)
+    unique_links = sorted(df_mote_metrics['link_id'].unique().tolist())
+    
+    return unique_motes, unique_links
+
+def generateFilteredPlots(df_filtered, aggregation_mode, selected_motes=None, selected_links=None):
+    """
+    Generate 3 separate independent figures (SNR, Power, Distribution) based on filtered data and aggregation mode.
+    Each figure is completely independent with its own traces, axes, and legend.
+    
+    :param df_filtered: Filtered DataFrame with mote metrics
+    :param aggregation_mode: 'per_mote' or 'all_links'
+    :param selected_motes: List of selected mote IDs (for labeling)
+    :param selected_links: List of selected link IDs (for labeling)
+    :return: Tuple of 3 Plotly figures: (snr_fig, power_fig, dist_fig)
+    """
+    if df_filtered.empty:
+        print(f"[DEBUG] generateFilteredPlots called - df_filtered is empty")
+        # Return empty figures with message
+        empty_fig = go.Figure()
+        empty_fig.add_annotation(
+            text="No data available for selected filters",
+            xref="paper", yref="paper",
+            x=0.5, y=0.5, showarrow=False,
+            font=dict(size=16)
+        )
+        return empty_fig, empty_fig, empty_fig
+    
+    # Ensure link_id column exists
+    if 'link_id' not in df_filtered.columns:
+        df_filtered = df_filtered.copy()
+        df_filtered['link_id'] = df_filtered['source'].astype(str) + '->' + df_filtered['dest'].astype(str)
+    
+    # Color palette for traces
+    colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', 
+              '#e377c2', '#7f7f7f', '#bcbd22', '#17becf', '#aec7e8', '#ffbb78',
+              '#98df8a', '#ff9896', '#c5b0d5', '#c49c94', '#f7b6d3', '#c7c7c7']
+    
+    # Create 3 separate independent figures
+    snr_fig = go.Figure()
+    power_fig = go.Figure()
+    dist_fig = go.Figure()
+    
+    if aggregation_mode == 'per_mote':
+        # Aggregate links per mote (mean across links for each mote)
+        unique_motes = sorted(df_filtered['moteId'].unique())
+        
+        trace_count_snr = 0
+        trace_count_power = 0
+        trace_count_dist = 0
+        
+        for idx, mote_id in enumerate(unique_motes):
+            df_mote = df_filtered[df_filtered['moteId'] == mote_id].copy()
+
+            # Debug: Check what timesteps are in df_mote before aggregation
+            if df_mote.empty:
+                print(f"[DEBUG] Mote {mote_id} is empty")
+                continue
+            actual_timesteps = sorted(df_mote['timestep'].unique().tolist())
+            if len(actual_timesteps) > 10 or max(actual_timesteps) > 10:
+                print(f"[DEBUG] Mote {mote_id} has timesteps: {actual_timesteps[:20]}{'...' if len(actual_timesteps) > 20 else ''}, max: {max(actual_timesteps)}")
+            
+            df_agg = df_mote.groupby('timestep').agg({
+                'snr': 'mean',
+                'power': 'mean',
+                'distribution': 'mean'
+            }).reset_index().sort_values('timestep')
+            
+            # Debug: Print summary instead of full DataFrame to avoid encoding issues
+            if not df_agg.empty:
+                print(f"[DEBUG] Mote {mote_id} aggregated - {len(df_agg)} timesteps, SNR range: {df_agg['snr'].min():.2f} to {df_agg['snr'].max():.2f}, Power range: {df_agg['power'].min()} to {df_agg['power'].max()}, Dist range: {df_agg['distribution'].min()} to {df_agg['distribution'].max()}")
+
+            if not df_agg.empty:
+                color = colors[idx % len(colors)]
+                label = f"Mote {int(mote_id)} (avg across links)"
+                
+                # Use unique trace names per metric to avoid Plotly hiding traces
+                # But keep same legendgroup so they toggle together in legend
+                # This ensures each trace has a unique identifier while still grouping in legend
+                snr_name = f"{label}_snr"
+                power_name = f"{label}_power"
+                dist_name = f"{label}_dist"
+                
+                # SNR - add to SNR figure
+                snr_fig.add_trace(
+                    go.Scatter(
+                        x=df_agg['timestep'],
+                        y=df_agg['snr'],
+                        mode='lines+markers',
+                        name=label,  # Clean label for legend
+                        line=dict(color=color, width=2),
+                        marker=dict(size=4),
+                        hovertemplate=f'<b>{label}</b><br>Timestep: %{{x}}<br>SNR: %{{y:.2f}}<extra></extra>',
+                        showlegend=True
+                    )
+                )
+                
+                # Power - add to Power figure
+                power_fig.add_trace(
+                    go.Scatter(
+                        x=df_agg['timestep'],
+                        y=df_agg['power'],
+                        mode='lines+markers',
+                        name=label,  # Same label for consistency
+                        line=dict(color=color, width=2),
+                        marker=dict(size=4),
+                        hovertemplate=f'<b>{label}</b><br>Timestep: %{{x}}<br>Power: %{{y}}<extra></extra>',
+                        showlegend=True
+                    )
+                )
+                
+                trace_count_snr += 1
+                trace_count_power += 1
+                
+                print(f"[DEBUG] Added SNR and Power traces for {label} (mote {mote_id})")
+                
+                # Distribution - add to Distribution figure
+                dist_fig.add_trace(
+                    go.Scatter(
+                        x=df_agg['timestep'],
+                        y=df_agg['distribution'],
+                        mode='lines+markers',
+                        name=label,  # Same label for consistency
+                        line=dict(color=color, width=2),
+                        marker=dict(size=4),
+                        hovertemplate=f'<b>{label}</b><br>Timestep: %{{x}}<br>Distribution: %{{y}}<extra></extra>',
+                        showlegend=True
+                    )
+                )
+                trace_count_dist += 1
+                print(f"[DEBUG] Added distribution trace for {label} (mote {mote_id})")
+        
+        # Verify all traces were added
+        print(f"[DEBUG] per_mote mode - Trace counts - SNR: {trace_count_snr}, Power: {trace_count_power}, Distribution: {trace_count_dist} for {len(unique_motes)} unique motes")
+        print(f"[DEBUG] Actual figure traces count - SNR: {len(snr_fig.data)}, Power: {len(power_fig.data)}, Distribution: {len(dist_fig.data)}")
+    
+    else:  # 'all_links' - show all selected links as separate traces
+        unique_links = sorted(df_filtered['link_id'].unique())
+        print(f"[DEBUG] unique_links: {unique_links}")
+        
+        trace_count_snr = 0
+        trace_count_power = 0
+        trace_count_dist = 0
+        
+        for idx, link_id in enumerate(unique_links):
+            df_link = df_filtered[df_filtered['link_id'] == link_id].sort_values('timestep')
+            
+            if not df_link.empty:
+                color = colors[idx % len(colors)]
+                # Get mote ID for this link (use first occurrence)
+                mote_id = int(df_link.iloc[0]['moteId'])
+                label = f"Link {link_id} (Mote {mote_id})"
+                
+                # SNR - add to SNR figure
+                snr_fig.add_trace(
+                    go.Scatter(
+                        x=df_link['timestep'],
+                        y=df_link['snr'],
+                        mode='lines+markers',
+                        name=label,  # This will show in legend
+                        line=dict(color=color, width=2),
+                        marker=dict(size=4),
+                        hovertemplate=f'<b>{label}</b><br>Timestep: %{{x}}<br>SNR: %{{y:.2f}}<extra></extra>',
+                        showlegend=True
+                    )
+                )
+                trace_count_snr += 1
+                
+                # Power - add to Power figure
+                power_fig.add_trace(
+                    go.Scatter(
+                        x=df_link['timestep'],
+                        y=df_link['power'],
+                        mode='lines+markers',
+                        name=label,  # Same label for consistency
+                        line=dict(color=color, width=2),
+                        marker=dict(size=4),
+                        hovertemplate=f'<b>{label}</b><br>Timestep: %{{x}}<br>Power: %{{y}}<extra></extra>',
+                        showlegend=True
+                    )
+                )
+                trace_count_power += 1
+                
+                # Distribution - add to Distribution figure
+                dist_fig.add_trace(
+                    go.Scatter(
+                        x=df_link['timestep'],
+                        y=df_link['distribution'],
+                        mode='lines+markers',
+                        name=label,  # Same label for consistency
+                        line=dict(color=color, width=2),
+                        marker=dict(size=4),
+                        hovertemplate=f'<b>{label}</b><br>Timestep: %{{x}}<br>Distribution: %{{y}}<extra></extra>',
+                        showlegend=True
+                    )
+                )
+                trace_count_dist += 1
+        
+        print(f"[DEBUG] Trace counts - SNR: {trace_count_snr}, Power: {trace_count_power}, Distribution: {trace_count_dist} for {len(unique_links)} unique links")
+    
+    # Get actual timestep range from filtered data to set x-axis limits
+    
+    print(f"[DEBUG] generateFilteredPlots called - df_filtered timestep range: {df_filtered['timestep'].min() if not df_filtered.empty else 'N/A'} to {df_filtered['timestep'].max() if not df_filtered.empty else 'N/A'}, Rows: {len(df_filtered)}")
+
+    if not df_filtered.empty:
+        min_timestep = int(df_filtered['timestep'].min())
+        max_timestep = int(df_filtered['timestep'].max())
+        # Add small padding for better visualization (0.5 units on each side)
+        x_range = [min_timestep - 0.5, max_timestep + 0.5]
+        # Ensure we don't go below 0 for timesteps
+        if x_range[0] < 0:
+            x_range[0] = -0.5
+        print(f"[DEBUG] Setting x_range to: {x_range} (min_timestep={min_timestep}, max_timestep={max_timestep})")
+    else:
+        x_range = None
+        print("[DEBUG] x_range is None (empty dataframe)")
+    
+    # Configure each figure independently with its own axes and layout
+    # Update SNR figure
+    snr_fig.update_layout(
+        title="SNR Over Time",
+        xaxis_title="Timestep",
+        yaxis_title="SNR (dB)",
+        height=300,
+        showlegend=True,
+        hovermode='closest'
+    )
+    if x_range:
+        snr_fig.update_xaxes(range=x_range, autorange=False)
+    
+    # Update Power figure
+    power_fig.update_layout(
+        title="Power Over Time",
+        xaxis_title="Timestep",
+        yaxis_title="Power",
+        height=300,
+        showlegend=True,
+        hovermode='closest'
+    )
+    if x_range:
+        power_fig.update_xaxes(range=x_range, autorange=False)
+    
+    # Update Distribution figure
+    dist_fig.update_layout(
+        title="Distribution Over Time",
+        xaxis_title="Timestep",
+        yaxis_title="Distribution",
+        height=300,
+        showlegend=True,
+        hovermode='closest'
+    )
+    if x_range:
+        dist_fig.update_xaxes(range=x_range, autorange=False)
+    
+    print(f"[DEBUG] All figures configured - SNR traces: {len(snr_fig.data)}, Power traces: {len(power_fig.data)}, Distribution traces: {len(dist_fig.data)}")
+    
+    return snr_fig, power_fig, dist_fig
+
+def createInteractiveMoteMetricsApp(df_mote_metrics):
+    """
+    Create an interactive Dash web application for filtering and visualizing mote metrics.
+    
+    :param df_mote_metrics: DataFrame with mote metrics
+    :return: Dash app instance
+    """
+    # Debug: Print what data we're receiving
+    print(f"\n[DEBUG] createInteractiveMoteMetricsApp called with:")
+    print(f"  DataFrame shape: {df_mote_metrics.shape}")
+    print(f"  Timestep range: {df_mote_metrics['timestep'].min()} to {df_mote_metrics['timestep'].max()}")
+    print(f"  Unique timesteps count: {df_mote_metrics['timestep'].nunique()}")
+    print(f"  First few unique timesteps: {sorted(df_mote_metrics['timestep'].unique().tolist())[:10]}")
+    
+    # Make a copy of the dataframe to avoid modifying the original
+    # Ensure link_id column exists
+    df_copy = df_mote_metrics.copy()
+    if 'link_id' not in df_copy.columns:
+        print("Link ID column not found, creating it")
+        df_copy['link_id'] = df_copy['source'].astype(str) + '->' + df_copy['dest'].astype(str)
+    
+    print(f"[DEBUG] After copy - Timestep range: {df_copy['timestep'].min()} to {df_copy['timestep'].max()}")
+    
+    # Get unique values for filters
+    unique_motes, unique_links = getUniqueMotesAndLinks(df_copy)
+    print(f"Unique motes: {unique_motes}")
+    print(f"Unique links: {unique_links}")
+    
+    # Create Dash app with cache busting to prevent browser from using cached figures
+    app = dash.Dash(__name__)
+    
+    # Disable caching for this app to ensure fresh data on reload
+    # app.config.suppress_callback_exceptions = True
+    
+    # Add cache-busting headers to prevent browser from caching the figure
+    @app.server.after_request
+    def add_cache_control(response):
+        response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+        return response
+    
+    # Create options for dropdowns
+    mote_options = [{'label': f'Mote {mote}', 'value': mote} for mote in unique_motes]
+    link_options = [{'label': link, 'value': link} for link in unique_links]
+    
+    # Default selections
+    default_motes = unique_motes
+    default_links = []
+    default_agg_mode = 'all_links'  # Changed from 'individual_links' since link_id (source->dest) is unique per mote
+        
+    # CRITICAL: Generate initial figures fresh to ensure correct data from start
+    # The callback will also regenerate them on any filter change
+    initial_snr_fig, initial_power_fig, initial_dist_fig = generateFilteredPlots(df_copy, default_agg_mode, default_motes, default_links)
+    
+    # Debug: Check what timesteps are in the initial figures' traces
+    print(f"[DEBUG] Initial figures created - checking trace data...")
+    for i, trace in enumerate(initial_snr_fig.data[:3]):  # Check first 3 traces
+        if hasattr(trace, 'x') and trace.x is not None:
+            x_data = list(trace.x) if hasattr(trace.x, '__iter__') else [trace.x]
+            if x_data:
+                print(f"  SNR Trace {i} ({trace.name}): x range = {min(x_data)} to {max(x_data)}, {len(x_data)} points")
+    
+    # Define layout with standard HTML components
+    app.layout = html.Div([
+        # Title at the top, spanning full width
+        html.H2("Mote Metrics Interactive Dashboard", style={'marginBottom': '20px', 'paddingLeft': '20px'}),
+        html.Hr(),
+        
+        html.Div([
+            html.Div([
+                # Filters section
+                html.H5("Filters", style={'marginBottom': '15px'}),
+                
+                # Mote selector
+                html.Label("Select Motes:", style={'marginTop': '15px', 'display': 'block', 'fontWeight': 'bold'}),  
+                dcc.Dropdown(
+                    id='mote-selector',
+                    options=mote_options,
+                    value=default_motes,  # Use the default we calculated earlier
+                    multi=True,
+                    placeholder="Select motes to display...",
+                    style={'marginBottom': '15px'}
+                ),
+                
+                # Link selector
+                html.Label("Select Links:", style={'marginTop': '15px', 'display': 'block', 'fontWeight': 'bold'}),
+                dcc.Dropdown(
+                    id='link-selector',
+                    options=link_options,
+                    value=[],  # Default: empty (show all links for selected motes)
+                    multi=True,
+                    placeholder="Select links to display (leave empty for all)...",
+                    style={'marginBottom': '15px'}
+                ),
+                
+                # Aggregation mode
+                html.Label("Aggregation Mode:", style={'marginTop': '15px', 'display': 'block', 'fontWeight': 'bold'}),  
+                dcc.RadioItems(
+                    id='aggregation-mode',
+                    options=[
+                        {'label': 'Per Link', 'value': 'all_links'},
+                        {'label': 'Per Mote (avg)', 'value': 'per_mote'}
+                    ],
+                    value=default_agg_mode,  # Use the default we calculated earlier
+                    style={'marginBottom': '15px'}
+                ),
+                
+                # Info text
+                html.Div([
+                    html.P("Select motes and/or links to filter the data. Use aggregation mode to control how data is grouped.", 
+                           style={'marginTop': '20px', 'fontSize': '12px', 'color': '#666'})
+                ])
+                
+            ], style={'width': '25%', 'float': 'left', 'padding': '20px', 'backgroundColor': '#f5f5f5', 'height': '100vh', 'overflowY': 'auto'}),
+            
+            # Main plot area - 3 separate independent graphs
+            html.Div([
+                dcc.Graph(
+                    id='snr-plot', 
+                    figure=initial_snr_fig,
+                    style={'height': '300px', 'marginBottom': '20px'},
+                    config={'displayModeBar': True, 'displaylogo': False}
+                ),
+                dcc.Graph(
+                    id='power-plot', 
+                    figure=initial_power_fig,
+                    style={'height': '300px', 'marginBottom': '20px'},
+                    config={'displayModeBar': True, 'displaylogo': False}
+                ),
+                dcc.Graph(
+                    id='distribution-plot', 
+                    figure=initial_dist_fig,
+                    style={'height': '300px'},
+                    config={'displayModeBar': True, 'displaylogo': False}
+                )
+            ], style={'width': '75%', 'float': 'right', 'padding': '20px'})
+        ])
+    ], style={'fontFamily': 'sans-serif, Arial'})
+    
+    # Define callback - ensure it fires on initial load, returns 3 separate figures
+    @app.callback(
+        [Output('snr-plot', 'figure'),
+         Output('power-plot', 'figure'),
+         Output('distribution-plot', 'figure')],
+        Input('mote-selector', 'value'),
+        Input('link-selector', 'value'),
+        Input('aggregation-mode', 'value'),
+        prevent_initial_call=False  # Allow callback to fire on initial load
+    )
+    def update_plots(selected_motes, selected_links, agg_mode):
+        # Debug: Confirm callback is firing
+        print(f"\n[DEBUG] ===== CALLBACK FIRED =====")
+        print(f"[DEBUG] Callback inputs - selected_motes: {selected_motes}, selected_links: {selected_links}, agg_mode: {agg_mode}")
+        
+        # CRITICAL: Always start fresh from df_copy, never use cached/old data
+        # Create a new copy each time to ensure we're not accidentally using stale references
+        df_filtered = df_copy.copy()
+        
+        # Debug: Print actual data range being used
+        if not df_filtered.empty:
+            min_ts = df_filtered['timestep'].min()
+            max_ts = df_filtered['timestep'].max()
+            unique_ts = sorted(df_filtered['timestep'].unique().tolist())
+            print(f"[DEBUG] Data in callback - Min timestep: {min_ts}, Max timestep: {max_ts}, Unique timesteps: {unique_ts[:10]}{'...' if len(unique_ts) > 10 else ''}")
+            print(f"[DEBUG] Total rows in df_filtered: {len(df_filtered)}")
+        
+        # Filter by motes if selected (handle None and empty list)
+        if selected_motes and len(selected_motes) > 0:
+            df_filtered = df_filtered[df_filtered['moteId'].isin(selected_motes)]
+        
+        # Filter by links if selected (handle None and empty list)
+        if selected_links and len(selected_links) > 0:
+            df_filtered = df_filtered[df_filtered['link_id'].isin(selected_links)]
+        
+        # Debug: Print after filtering
+        if not df_filtered.empty:
+            print(f"[DEBUG] After filtering - Min timestep: {df_filtered['timestep'].min()}, Max timestep: {df_filtered['timestep'].max()}, Rows: {len(df_filtered)}")
+        
+        # Generate 3 separate plots
+        snr_fig, power_fig, dist_fig = generateFilteredPlots(df_filtered, agg_mode, selected_motes, selected_links)
+        return snr_fig, power_fig, dist_fig
+    
+    return app
+
 def createMoteMetricsCharts(df_mote_metrics):
     """
     Main function to create all mote metrics charts.
@@ -788,6 +1246,49 @@ def getData():
     
     return dfs_all.merge(dfs_all_surprise, on="timestep")
 
+def kill_processes_on_port(port=8050):
+    """
+    Kill any processes currently listening on the specified port.
+    This prevents port conflicts when starting the Dash server.
+    
+    :param port: Port number to check and clear (default: 8050)
+    """
+    try:
+        # Determine script path relative to this Python file
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        
+        if sys.platform == 'win32':
+            script_path = os.path.join(script_dir, 'kill_port.bat')
+            cmd = [script_path, str(port)]
+        else:
+            script_path = os.path.join(script_dir, 'kill_port.sh')
+            cmd = ['bash', script_path, str(port)]
+        
+        # Check if script exists
+        if not os.path.exists(script_path):
+            print(f"Warning: Port cleanup script not found at {script_path}. Skipping port check.")
+            return
+        
+        # Run the script
+        result = subprocess.run(
+            cmd,
+            shell=True if sys.platform == 'win32' else False,
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        
+        # Print script output
+        if result.stdout:
+            print(result.stdout.strip())
+        if result.stderr and result.returncode != 0:
+            print(f"Warning: {result.stderr.strip()}")
+    
+    except subprocess.TimeoutExpired:
+        print(f"Warning: Timeout while checking port {port}. Proceeding anyway...")
+    except Exception as e:
+        print(f"Warning: Error checking port {port}: {e}. Proceeding anyway...")
+
 def run():
     df_all = getData()
     print(df_all.head(30))
@@ -809,15 +1310,35 @@ def run():
         
         df_mote_metrics = loadMoteMetrics(folder_path)
         print(f"\nLoaded {len(df_mote_metrics)} rows of mote metrics data")
+        print(f"Timestep range: {df_mote_metrics['timestep'].min()} to {df_mote_metrics['timestep'].max()}")
+        print(f"Unique timesteps: {sorted(df_mote_metrics['timestep'].unique().tolist())}")
         print(df_mote_metrics.head(30))
         
-        createMoteMetricsCharts(df_mote_metrics)
+        # Create static charts (for backward compatibility)
+        print("\nCreating static mote metrics visualizations...")
+        #createMoteMetricsCharts(df_mote_metrics)
+        
+        # Create and launch interactive Dash app
+        print("\nLaunching interactive Dash app...")
+        
+        # Kill any existing processes on port 8050 before starting
+        kill_processes_on_port(8050)
+        
+        print("The app will open in your default web browser.")
+        print("You can filter by motes and links to get fine-grained views of the metrics.")
+        print("Close this terminal or press Ctrl+C to stop the server.")
+        
+        app = createInteractiveMoteMetricsApp(df_mote_metrics)
+        app.run(debug=True, port=8050)
+        
     except FileNotFoundError as e:
         print(f"\nWarning: Could not load mote metrics: {e}")
         print("Skipping mote metrics visualizations.")
     except Exception as e:
         print(f"\nWarning: Error creating mote metrics charts: {e}")
         print("Skipping mote metrics visualizations.")
+        import traceback
+        traceback.print_exc()
 
 if __name__ == "__main__":
     run()

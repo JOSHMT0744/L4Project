@@ -319,7 +319,7 @@ public class ERPerseus implements Solver {
 		
 		System.out.println();
 		System.out.println("=== RUN POMDP SOLVER ===");
-		System.out.println("Algorithm: Perseus (point-based value iteration)");
+		System.out.println("Algorithm: ERPerseus (point-based value iteration)");
 		System.out.println("Belief sampling started...");
 		
 		ArrayList<BeliefPoint> B = getBeliefPoints(pomdp);
@@ -377,8 +377,8 @@ public class ERPerseus implements Solver {
 		}
 		System.out.println();
 		
-		System.out.println("Best Index:  "+bestindex);
-		System.out.println("Selected Action"+V.get(bestindex).getAction());
+		//System.out.println("Best Index:  "+bestindex);
+		System.out.println("Selected Action "+V.get(bestindex).getAction());
 		// Use File constructor to properly join paths and handle absolute paths
 		File outputDir = new File(sp.getOutputDir());
 		File outputFile = new File(outputDir, pomdp.getInstanceName() + ".alpha");

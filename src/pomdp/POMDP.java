@@ -238,7 +238,13 @@ public class POMDP {
 	public int nextState(int currentState, int action) {
 		// TODO Auto-generated method stub
 		///check for DeltaIOT//////////////////////////////
-		iot.DeltaIOTConnector dataConnector = new iot.DeltaIOTConnector();
+		// Use the active connector instance instead of creating a new one
+		// The active instance has noiseInjector properly configured
+		iot.DeltaIOTConnector dataConnector = iot.DeltaIOTConnector.activeInstance;
+		if (dataConnector == null) {
+			System.err.println("Warning: activeInstance is null in POMDP.nextState(), creating fallback instance");
+			dataConnector = new iot.DeltaIOTConnector();
+		}
 		
 		if(action == 0) {
 			System.out.println("DTP");
