@@ -27,6 +27,28 @@ import org.apache.commons.math3.special.Gamma;
  */
 public class DeltaIOTConnector {
 	
+	/**
+	 * Data class to hold MIS (Mutual Information Surprise) value along with its confidence bounds.
+	 */
+	public static class MISResult {
+		public final double mis;
+		public final double lowerBound;
+		public final double upperBound;
+		
+		public MISResult(double mis, double lowerBound, double upperBound) {
+			this.mis = mis;
+			this.lowerBound = lowerBound;
+			this.upperBound = upperBound;
+		}
+		
+		/**
+		 * Returns a MISResult with all values set to 0.0 (used when insufficient history).
+		 */
+		public static MISResult zero() {
+			return new MISResult(0.0, 0.0, 0.0);
+		}
+	}
+	
 	public static POMDP p;
 	
 	// Static reference to the active connector instance (set by SolvePOMDP)
@@ -404,7 +426,8 @@ public class DeltaIOTConnector {
 	/**
 	 * Calculates Mutual Information Surprise (MIS) for a given mote and timestep.
 	 * MIS represents the difference in mutual information (MI) between the current timestep and
-	 * the value from "lookback" timesteps earlier. Returns 0.0 if there isn't enough MI history.
+	 * the value from "lookback" timesteps earlier. Returns MISResult with MIS value and confidence bounds.
+	 * If there isn't enough MI history, returns MISResult with all values set to 0.0.
 	 *
 	 * @param transitionBeliefPrior The prior transition belief (before +1.0 update)
 	 * @param transitionBeliefPosterior The posterior updated transition belief (after +1.0 update)
@@ -412,9 +435,9 @@ public class DeltaIOTConnector {
 	 * @param nextstate The next state
 	 * @param moteId    The unique identifier for the mote
 	 * @param timestep  The current simulation timestep
-	 * @return          The computed MIS value (0.0 if insufficient MI history)
+	 * @return          MISResult containing the computed MIS value and confidence bounds (all 0.0 if insufficient MI history)
 	 */
-	private double calculateAndStoreMIS(double[][][] transitionBeliefPrior, double[][][] transitionBeliefPosterior, int action, int nextstate, int moteId, int timestep) {
+	private MISResult calculateAndStoreMIS(double[][][] transitionBeliefPrior, double[][][] transitionBeliefPosterior, int action, int nextstate, int moteId, int timestep) {
 		/// 1. CALCULATE PRIOR ENTROPY (uncertainty before observing the transition)
 		double priorEntropy = this.getMoteEntropy(transitionBeliefPrior, action, nextstate);
 		/// 2. CALCULATE POSTERIOR ENTROPY (uncertainty after observing the transition)
@@ -433,10 +456,9 @@ public class DeltaIOTConnector {
 		history.add(mutualInformation);
 		
 		// Calculate MIS if we have enough history (need at least lookback+1 entries: current + lookback previous)
-		double mis = 0.0;
 		if (history.size() > lookback) {
 			// MIS = MI[current] - MI[current - lookback]
-			mis = history.get(history.size() - 1) - history.get(history.size() - 1 - lookback);
+			double mis = history.get(history.size() - 1) - history.get(history.size() - 1 - lookback);
 
 			// Calculate upper and lower bounds of MIS according to Theorem 1
 			// Theorem 1: Î_{n+m} - Î_n ∈ (log(m + n) - log n) ± (2m log(2/ρ) log(m + n)) / (m + n)
@@ -463,10 +485,13 @@ public class DeltaIOTConnector {
 				appendMISBoundsToFile(timestep, lowerBound, upperBound);
 				lastBoundsTimestep = timestep;
 			}
+			
+			// Return MISResult with computed values
+			return new MISResult(mis, lowerBound, upperBound);
 		}
-		// If not enough history, return 0.0 (no surprise yet)
 		
-		return mis;
+		// If not enough history, return MISResult with all values set to 0.0 (no surprise yet)
+		return MISResult.zero();
 	}
 	
 	public void clearFile(String filename) {
@@ -518,8 +543,9 @@ public class DeltaIOTConnector {
 		double logSurpriseCC = Math.log(Math.max(this.eps, surpriseCC));
 		// bayesFactorSurprise already returns a log value, so don't take log again
 		double logSurpriseBF = Math.max(this.eps, bayesFactorSurprise(p.transitionBeliefCurr, p.transitionBeliefReset, action, nextstate));
-		double currentMIS = calculateAndStoreMIS(p.transitionBeliefCurr, transitionBeliefCurrTemp, action, nextstate, DeltaIOTConnector.selectedmote.getMoteid(), DeltaIOTConnector.timestep);		
-		
+		MISResult misResult = calculateAndStoreMIS(p.transitionBeliefCurr, transitionBeliefCurrTemp, action, nextstate, DeltaIOTConnector.selectedmote.getMoteid(), DeltaIOTConnector.timestep);
+		double currentMIS = misResult.mis; // Extract MIS value for backward compatibility		
+
 		double logSurprise = 0.0;
 		if (surpriseMeasureForGamma.equals("CC")) {
 			logSurprise = logSurpriseCC;
@@ -533,6 +559,30 @@ public class DeltaIOTConnector {
 			// Add a small offset to prevent log(0) when MIS is exactly 0, but scale it so small MIS values still produce reasonable gamma
 			double scaledMIS = Math.max(this.eps, absMIS);
 			logSurprise = Math.log(scaledMIS);
+		} else if (surpriseMeasureForGamma.equals("MIS-BN")) {
+			// Bound-normalized MIS: normalize MIS relative to its confidence bounds
+			// The bounds represent a confidence interval, so we normalize by the range
+			// This maps MIS to a value between 0 and 1 (or outside if MIS exceeds bounds)
+			double boundRange = misResult.upperBound - misResult.lowerBound;
+			
+			if (boundRange > this.eps) {
+				// Normalize: (MIS - lowerBound) / (upperBound - lowerBound)
+				// This maps lowerBound -> 0, upperBound -> 1
+				// Values outside [0,1] indicate MIS is outside the confidence interval
+				double normalizedMIS = (currentMIS - misResult.lowerBound) / (1/boundRange);
+				
+				// Clamp to [0, 1] to ensure valid log input, or use absolute value to preserve magnitude
+				// Using absolute value to handle cases where MIS might be slightly outside bounds
+				double clampedNormalizedMIS = Math.max(0.0, Math.min(1.0, Math.abs(normalizedMIS)));
+				
+				// Ensure we have a positive value for log
+				logSurprise = Math.log(Math.max(this.eps, clampedNormalizedMIS));
+			} else {
+				// Fallback: if bounds are invalid or too close, use absolute MIS value
+				double absMIS = Math.abs(currentMIS);
+				double scaledMIS = Math.max(this.eps, absMIS);
+				logSurprise = Math.log(scaledMIS);
+			}
 		}
 
 		// Predefined rate m dictates how much model changes
@@ -617,14 +667,15 @@ public class DeltaIOTConnector {
 			for (Mote mote : DeltaIOTConnector.motes) {
 				for (Link link : mote.getLinks()) {
 					DeltaIOTConnector.selectedlink = link;
-					System.out.println("LINK OFF: " + link.getSource() + " -> " + link.getDest());
-					System.out.println("LINK DISTRIBUTION: " + DeltaIOTConnector.selectedlink.getDistribution());
-					System.out.println("LINK POWER: " + DeltaIOTConnector.selectedlink.getPower());
-					System.out.println("LINK SF: " + DeltaIOTConnector.selectedlink.getSF());
-					System.out.println("LINK SNR: " + DeltaIOTConnector.selectedlink.getSNR());
-					System.out.println("LINK SOURCE: " + DeltaIOTConnector.selectedlink.getSource());
-					System.out.println("LINK DEST: " + DeltaIOTConnector.selectedlink.getDest());
 					if (noiseInjector.isLinkOff(link.getSource(), link.getDest())) {
+						System.out.println("LINK OFF: " + link.getSource() + " -> " + link.getDest());
+						System.out.println("LINK DISTRIBUTION: " + DeltaIOTConnector.selectedlink.getDistribution());
+						System.out.println("LINK POWER: " + DeltaIOTConnector.selectedlink.getPower());
+						System.out.println("LINK SF: " + DeltaIOTConnector.selectedlink.getSF());
+						System.out.println("LINK SNR: " + DeltaIOTConnector.selectedlink.getSNR());
+						System.out.println("LINK SOURCE: " + DeltaIOTConnector.selectedlink.getSource());
+						System.out.println("LINK DEST: " + DeltaIOTConnector.selectedlink.getDest());
+						
 						// Force distribution to 0 for failed links
 						DeltaIOTConnector.selectedlink.setDistribution(0);
 						// Apply settings to enforce the distribution

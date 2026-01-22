@@ -157,7 +157,7 @@ public class NoiseInjector {
 		}
 		
 		// Update mote failure timers
-		if (moteFailureEnabled) {
+		if (moteFailureEnabled && motes != null) {
 			// Check for new mote failures
 			for (Mote mote : motes) {
 				if (mote == null) continue;

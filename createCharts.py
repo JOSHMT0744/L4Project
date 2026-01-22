@@ -1206,7 +1206,6 @@ def getData():
                 print(f"Warning: Skipping empty file: {filename}")
                 continue
             try:
-                df_mote_metrics = pd.read_csv(file_path, sep=r"\s+", header=None, on_bad_lines='skip', engine='python')
                 # Read CSV with whitespace separator, skip bad lines
                 df = pd.read_csv(file_path, sep=r"\s+", header=None, on_bad_lines='skip', engine='python')
             except pd.errors.EmptyDataError:

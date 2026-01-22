@@ -126,8 +126,12 @@ public class ERPolicy {
     
     /**
      * Compute Q-value at belief: max over alpha vectors
+     * Returns Double.NEGATIVE_INFINITY if the list is empty
      */
     private double computeQValue(double[] belief, List<AlphaVector> Gamma) {
+        if (Gamma == null || Gamma.isEmpty()) {
+            return Double.NEGATIVE_INFINITY;
+        }
         double maxVal = Double.NEGATIVE_INFINITY;
         for (AlphaVector alpha : Gamma) {
             double val = alpha.getDotProduct(belief);
@@ -138,27 +142,76 @@ public class ERPolicy {
     
     /**
      * Compute softmax weights with temperature
+     * Handles the case where all Q-values are Double.NEGATIVE_INFINITY to prevent NaN
      */
     private double[] softmax(double[] x) {
         double[] result = new double[x.length];
         
+        // Check if all values are negative infinity (e.g., all actions have empty Q-functions)
+        boolean allNegativeInfinity = true;
+        for (double v : x) {
+            if (v != Double.NEGATIVE_INFINITY && !Double.isNaN(v)) {
+                allNegativeInfinity = false;
+                break;
+            }
+        }
+        
+        // If all values are negative infinity, return uniform distribution
+        if (allNegativeInfinity) {
+            double uniformProb = 1.0 / x.length;
+            for (int i = 0; i < result.length; i++) {
+                result[i] = uniformProb;
+            }
+            return result;
+        }
+        
+        // Check for invalid lambda
+        if (lambda <= 0.0 || Double.isNaN(lambda) || Double.isInfinite(lambda)) {
+            // Fallback to uniform distribution if lambda is invalid
+            double uniformProb = 1.0 / x.length;
+            for (int i = 0; i < result.length; i++) {
+                result[i] = uniformProb;
+            }
+            return result;
+        }
+        
         // Scale by temperature
         double[] scaled = new double[x.length];
         for (int i = 0; i < x.length; i++) {
-            scaled[i] = x[i] / lambda;
+            if (Double.isNaN(x[i]) || Double.isInfinite(x[i])) {
+                scaled[i] = Double.NEGATIVE_INFINITY;
+            } else {
+                scaled[i] = x[i] / lambda;
+            }
         }
         
         // Find max for numerical stability
         double max = Double.NEGATIVE_INFINITY;
         for (double v : scaled) {
-            if (v > max) max = v;
+            if (v != Double.NEGATIVE_INFINITY && v > max) {
+                max = v;
+            }
         }
         
         // Compute exp and sum
         double sum = 0.0;
         for (int i = 0; i < scaled.length; i++) {
-            result[i] = Math.exp(scaled[i] - max);
+            if (scaled[i] == Double.NEGATIVE_INFINITY) {
+                result[i] = 0.0;
+            } else {
+                result[i] = Math.exp(scaled[i] - max);
+            }
             sum += result[i];
+        }
+        
+        // Prevent division by zero
+        if (sum == 0.0 || Double.isNaN(sum) || Double.isInfinite(sum)) {
+            // Fallback to uniform distribution
+            double uniformProb = 1.0 / x.length;
+            for (int i = 0; i < result.length; i++) {
+                result[i] = uniformProb;
+            }
+            return result;
         }
         
         // Normalize

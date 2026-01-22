@@ -401,7 +401,7 @@ public class SolvePOMDP {
 	 */
 	public void run(String pomdpFileName) {
 		
-		if(pomdpFileName.equals("IoT.POMDP"))
+		if(pomdpFileName.equals("IoT.POMDP") || pomdpFileName.equals("IoT2.POMDP"))
 		{
 			runCaseIoT(pomdpFileName);
 		}	
@@ -545,7 +545,7 @@ public class SolvePOMDP {
 		}
 		POMDP pomdp = PomdpParser.readPOMDP(pomdpFile.getAbsolutePath());
 		
-		int numTimesteps = 500;
+		int numTimesteps = 300;
 		// set alpha-vectors here (in future can have in POMDP file)
 		iot.DeltaIOTConnector.p=pomdp;		
 		
@@ -582,7 +582,7 @@ public class SolvePOMDP {
 		iot.DeltaIOTConnector.timestepiot = 0;
 		// Initialize timestep to 0 (monotonic increment only for timestep)
 		iot.DeltaIOTConnector.timestep = 0;
-		// set surprise measure for gamma calculation (MIS, CC, or BF)
+		// set surprise measure for gamma calculation (MIS, MIS-BN, CC, or BF)
 		deltaConnector.setSurpriseMeasureForGamma("MIS");
 		
 		// test turning a link fully of for full duration of simulation
@@ -599,10 +599,10 @@ public class SolvePOMDP {
 			}
 
 			// set failure for mote 10 at timestep 60
-			/*if (timestep == 250) {
+			if (timestep == 100) {
 				noiseInjector.turnLinkOff(7, 3);
 				noiseInjector.turnLinkOff(12, 3);
-			}*/
+			}
 			
 			/*
 			 * MAPE-K PHASE: MONITOR (timestep-level initialization)
@@ -612,7 +612,6 @@ public class SolvePOMDP {
 			 * - Getting the initial POMDP state from previous timestep
 			 * - Preparing for per-mote adaptation loop
 			 * 
-			 * Note: Per-mote MAPE-K cycles happen within the loop below.
 			 * Each mote goes through: Analyse -> Plan -> Execute -> Monitor
 			 * The baseline for each mote is implicitly the previous mote's post-action state
 			 * (or the previous timestep's last post-action state for the first mote).
@@ -836,7 +835,7 @@ public class SolvePOMDP {
 				// Wait for QoS data to be ready before accessing it to prevent warnings
 				// This ensures the simulator has completed data aggregation for all motes
 				System.out.println("Waiting for QoS data ready...");
-				ArrayList<QoS> result = waitForQoSDataReady(currentRun, 50, 100);
+				ArrayList<QoS> result = waitForQoSDataReady(currentRun, 50, 200);
 				if (result == null || result.isEmpty()) {
 					System.err.println("Warning: No QoS data available for run " + currentRun + ". Using defaults.");
 					System.err.println("Timestep: " + timestep + ", Mote: " + moteIndex + ", timestepiot: " + iot.DeltaIOTConnector.timestepiot);
@@ -1012,7 +1011,7 @@ public class SolvePOMDP {
 		}
 		
 		SolvePOMDP ps = new SolvePOMDP();
-		ps.run("IoT.POMDP");
+		ps.run("IoT2.POMDP");
 
 		long endTime = System.currentTimeMillis();
 		long totalTime = endTime - startTime;
