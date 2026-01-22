@@ -256,27 +256,25 @@ public class POMDP {
 		}
 		
 		// Note: This method is called during performAction() to determine the next state
-		// The action (DTP/ITP) has just been executed, changing the network configuration
-		// However, we need QoS data AFTER the action to determine the next state
-		// Since doSingleRun() is called AFTER performAction() in the main loop,
-		// we use the CURRENT run number (timestepiot) which corresponds to the
-		// baseline run that was done before the action (timestepiot was already incremented after that run)
-		// The actual effects of this action will be seen in the NEXT doSingleRun() call
-		// For now, we use the pre-action QoS to estimate the next state
-		// TODO: Consider restructuring to do doSingleRun() here or pass QoS as parameter
-		// At this point in the execution:
-		// - First doSingleRun() was called and timestepiot was incremented (e.g., from 124 to 125)
-		// - Action is being executed (DTP/ITP) during performAction()
-		// - Second doSingleRun() hasn't been called yet
-		// The issue: The run that was just created (timestepiot) may not have complete QoS data
-		// for all motes yet, causing "Unknown value data" warnings from the simulator.
-		// Solution: Use timestepiot - 2 to get the run from BEFORE the first doSingleRun(),
-		// which should have complete data from the previous mote iteration.
+		// The action (DTP/ITP) has just been executed, changing the network configuration.
+		// At this point in execution:
+		// - The previous mote's post-action run has been completed and timestepiot points to it
+		// - This previous mote's post-action state serves as the baseline for the current mote
+		// - The current mote's action has just been executed but not yet simulated
+		// - We use the baseline QoS (previous mote's post-action state) to estimate the next state
+		// 
+		// Since we're in a sequential loop over motes, each mote's baseline is the previous
+		// mote's post-action state. Therefore, timestepiot directly points to the baseline run.
+		// 
+		// Edge case: For the first mote in timestep 0, timestepiot = 0, so currentRun = 1.
+		// Since run 1 doesn't exist yet, waitForQoSDataReady() will return null/empty,
+		// and we'll return currentState as fallback (which is correct for the initial state).
 		int requestedRun = iot.DeltaIOTConnector.timestepiot;
 		
-		// Use timestepiot - 2 to get the run from before the current iteration's first doSingleRun()
-		// This ensures we're requesting a run that has complete QoS data for all motes
-		int currentRun = Math.max(1, requestedRun - 2);
+		// Use timestepiot directly to get the previous mote's post-action run, which serves
+		// as the baseline for the current mote. This run has complete QoS data for all motes.
+		// Math.max(1, ...) ensures we never request run 0 (simulator uses 1-indexed runs).
+		int currentRun = Math.max(1, requestedRun);
 
 		// Wait for QoS data to be ready before accessing it to prevent warnings
 		ArrayList<QoS> result = main.SolvePOMDP.waitForQoSDataReady(currentRun, 20, 100);

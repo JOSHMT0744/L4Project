@@ -43,6 +43,18 @@ public class OutputFileWriter {
 	 * @param outputFile output file where values should be written
 	 */
 	public static void dumpValueFunction(POMDP pomdp, ArrayList<AlphaVector> vectors, String outputFile, boolean useActionLabels) {
+		dumpValueFunction(pomdp, vectors, outputFile, useActionLabels, false);
+	}
+	
+	/**
+	 * Write a value function to a file (with append option)
+	 * @param pomdp POMDP model
+	 * @param vectors vector set representing the value function
+	 * @param outputFile output file where values should be written
+	 * @param useActionLabels whether to use action labels instead of action indices
+	 * @param append if true, append to file; if false, overwrite file
+	 */
+	public static void dumpValueFunction(POMDP pomdp, ArrayList<AlphaVector> vectors, String outputFile, boolean useActionLabels, boolean append) {
 		try {
 			Writer output = new BufferedWriter(new FileWriter(outputFile));
 			

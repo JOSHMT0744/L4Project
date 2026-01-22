@@ -31,6 +31,7 @@ import java.io.PrintWriter;
 import java.io.UnsupportedEncodingException;
 import java.net.URLDecoder;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Properties;
 import java.util.Random;
 
@@ -52,6 +53,7 @@ import solver.Solver;
 import solver.Perseus;
 import solver.ERPerseus;
 import solver.fastERPBVI;
+import solver.ERPolicy;
 
 
 
@@ -59,6 +61,7 @@ public class SolvePOMDP {
 	/* Class for configuring and running each component of the  */
 	private SolverProperties sp;     // object containing user-defined properties
 	private Solver solver;           // the solver that we use to solve a POMDP, which is exact or approximate
+	private ERPolicy erPolicy;       // the entropy-regularized policy that we use to select actions
 	private String domainDirName;    // name of the directory containing .POMDP files
 	private String domainDir;        // full path of the domain directory
 	
@@ -249,6 +252,8 @@ public class SolvePOMDP {
 		
 		// General Settings
 		String algorithmType = getPropertyOrThrow(properties, "algorithmType");
+		String lambda = getPropertyOrThrow(properties, "lambda");
+		sp.setLambda(Double.parseDouble(lambda));
 		sp.setTimeLimit(Double.parseDouble(getPropertyOrThrow(properties, "timeLimit")));
 		sp.setValueFunctionTolerance(Double.parseDouble(getPropertyOrThrow(properties, "valueFunctionTolerance")));
 
@@ -282,6 +287,7 @@ public class SolvePOMDP {
 		System.out.println("Belief sampling steps: "+sp.getBeliefSamplingSteps());
 		System.out.println("Dump policy graph: "+sp.dumpPolicyGraph());
 		System.out.println("Dump action labels: "+sp.dumpActionLabels());
+		System.out.println("Lambda: "+sp.getLambda());
 		
 		// load required POMDP algorithm
 		switch (algorithmType) {
@@ -291,14 +297,14 @@ public class SolvePOMDP {
 				this.solver = new Perseus(sp, new Random(222));
 				break;
 			case "erperseus":
-				this.solver = new ERPerseus(sp, new Random(222), 0.5);
+				this.solver = new ERPerseus(sp, new Random(222), sp.getLambda());
 				break;
 			case "fasterpbvi":
-				this.solver = new fastERPBVI(sp, new Random(222), 0.5, false);
+				this.solver = new fastERPBVI(sp, new Random(222), sp.getLambda(), false);
 				break;
 			case "erpbvi":
 				// Entropy-Regularized PBVI with default parameters
-				this.solver = new ERPBVI(sp, new Random(222), 0.5, false);
+				this.solver = new ERPBVI(sp, new Random(222), sp.getLambda(), false);
 				break;
 			default:
 				throw new RuntimeException("Unexpected algorithm type in properties file");
@@ -404,115 +410,65 @@ public class SolvePOMDP {
 	/**
 	 * Waits for QoS data to be ready for a specific run by validating that entries exist and have valid data.
 	 * This ensures the simulator has complete data before we access it, preventing "Unknown value data" warnings.
-	 * The method polls getNetworkQoS() and validates that the expected entry index has valid data.
+	 * The method directly checks the simulator's qosValues list size to determine if the requested run exists.
 	 * 
-	 * @param runNumber The run number to wait for
+	 * @param runNumber The run number to wait for (1-indexed). The function waits until at least this many runs exist.
 	 * @param maxRetries Maximum number of retry attempts (default: 20)
 	 * @param retryDelayMs Delay between retries in milliseconds (default: 50ms)
-	 * @return The QoS data when ready, or the last result if timeout
+	 * @return The last runNumber entries from the QoS list when ready, or the last result if timeout
 	 */
 	public static ArrayList<QoS> waitForQoSDataReady(int runNumber, int maxRetries, long retryDelayMs) {
+		System.out.println("Waiting for QoS data ready... maxRetries: "+maxRetries);
+		
+		// Validate inputs
+		if (runNumber <= 0) {
+			System.err.println("Warning: Invalid runNumber " + runNumber + ", must be > 0");
+			return new ArrayList<QoS>();
+		}
+		
 		for (int attempt = 0; attempt < maxRetries; attempt++) {
 			try {
-				// First, check if the run exists by getting the full QoS list
-				// getNetworkQoS(runNumber) internally accesses qosValues.get(runNumber - 1)
-				// We need to ensure the list has at least runNumber entries before accessing
-				ArrayList<QoS> result = null;
-				boolean hasWarnings = false;
-				
-				// Capture both stdout and stderr to detect "Unknown value data" warnings
-				PrintStream originalOut = System.out;
-				PrintStream originalErr = System.err;
-				ByteArrayOutputStream outCapture = new ByteArrayOutputStream();
-				ByteArrayOutputStream errCapture = new ByteArrayOutputStream();
-				PrintStream outStream = new PrintStream(outCapture, true);
-				PrintStream errStream = new PrintStream(errCapture, true);
-				
-				try {
-					System.setOut(outStream);
-					System.setErr(errStream);
-					// Get the full QoS list to check its size
-					// getNetworkQoS() with a run number internally accesses the list at index (runNumber - 1)
-					// We need to ensure the list has at least runNumber entries
-					result = (ArrayList<QoS>) DeltaIOTConnector.networkMgmt.getNetworkQoS(runNumber);
-				} finally {
-					System.setOut(originalOut);
-					System.setErr(originalErr);
-					String outOutput = outCapture.toString();
-					String errOutput = errCapture.toString();
-					hasWarnings = outOutput.contains("Unknown value data") || errOutput.contains("Unknown value data");
-					
-					// If warnings were detected, also check if values match default error values
-					// The warnings say "returning default (1.0)", so if we see 1.0 values, data might not be ready
-					if (!hasWarnings && result != null && !result.isEmpty()) {
-						// Check for default error values (1.0) that indicate missing data
-						for (int i = 0; i < result.size(); i++) {
-							try {
-								QoS qosEntry = result.get(i);
-								if (qosEntry != null) {
-									double packetLoss = qosEntry.getPacketLoss();
-									double energyConsumption = qosEntry.getEnergyConsumption();
-									// If both values are exactly 1.0, this might be a default error value
-									if (packetLoss == 0.0 && energyConsumption == 0.0) {
-										hasWarnings = true; // Treat as warning indicator
-										break;
-									}
-								}
-							} catch (Exception e) {
-								// Ignore
-							}
-						}
-					}
+				// Directly check the simulator's qosValues list size
+				// This is more reliable than using getNetworkQoS() which has different semantics
+				if (DeltaIOTConnector.networkMgmt == null) {
+					System.err.println("Warning: networkMgmt is null, waiting...");
+					Thread.sleep(retryDelayMs);
+					continue;
 				}
 				
-				if (result != null && !result.isEmpty()) {
-					// Check if list size is sufficient - the list must have at least runNumber entries
-					// because getNetworkQoS(runNumber) accesses result.get(runNumber - 1)
-					if (result.size() >= runNumber) {
-						// If no warnings were detected AND all entries are valid, data is ready
-						if (!hasWarnings) {
-							// Validate ALL entries to ensure they have valid data
-							boolean allEntriesValid = true;
-							
-							for (int i = 0; i < result.size(); i++) {
-								try {
-									QoS qosEntry = result.get(i);
-									if (qosEntry != null) {
-										double packetLoss = qosEntry.getPacketLoss();
-										double energyConsumption = qosEntry.getEnergyConsumption();
-										
-										boolean isValid = !Double.isNaN(packetLoss) && !Double.isNaN(energyConsumption) &&
-										                  packetLoss >= 0.0 && packetLoss <= 1.0 &&
-										                  energyConsumption >= 0.0 && !Double.isInfinite(energyConsumption);
-										
-										if (!isValid) {
-											allEntriesValid = false;
-											break;
-										}
-									} else {
-										allEntriesValid = false;
-										break;
-									}
-								} catch (Exception e) {
-									allEntriesValid = false;
-									break;
-								}
-							}
-							
-							if (allEntriesValid) {
-								// No warnings and all entries valid - data is ready
-								return result;
-							}
-						}
-					}
+				if (DeltaIOTConnector.networkMgmt.getSimulator() == null) {
+					System.err.println("Warning: simulator is null, waiting...");
+					Thread.sleep(retryDelayMs);
+					continue;
 				}
+				
+				List<QoS> qosValues = DeltaIOTConnector.networkMgmt.getSimulator().getQosValues();
+				if (qosValues == null) {
+					System.err.println("Warning: qosValues list is null, waiting...");
+					Thread.sleep(retryDelayMs);
+					continue;
+				}
+				
+				int qosSize = qosValues.size();
+				System.out.println("getting network qos");
+				System.out.println("run number: "+runNumber);
+				System.out.println("qosValues size: "+qosSize);
+				
+				// Check if we have at least runNumber entries in the QoS list
+				if (qosSize >= runNumber) {
+					// Data is ready - return the last runNumber entries using getNetworkQoS()
+					ArrayList<QoS> result = (ArrayList<QoS>) DeltaIOTConnector.networkMgmt.getNetworkQoS(runNumber);
+					System.out.println("result size: "+result.size());
+					return result;
+				}
+				
 				// Data not ready yet, wait and retry
 				Thread.sleep(retryDelayMs);
 			} catch (InterruptedException e) {
 				Thread.currentThread().interrupt();
 				break;
 			} catch (Exception e) {
-				// On error, wait and retry
+				System.err.println("Warning: Exception while waiting for QoS data: " + e.getMessage());
 				try {
 					Thread.sleep(retryDelayMs);
 				} catch (InterruptedException ie) {
@@ -521,8 +477,15 @@ public class SolvePOMDP {
 				}
 			}
 		}
-		// Timeout - return whatever we have (last attempt)
-		return (ArrayList<QoS>) DeltaIOTConnector.networkMgmt.getNetworkQoS(runNumber);
+		
+		// Timeout - return whatever we have (may be partial data)
+		System.err.println("Warning: Timeout waiting for QoS data for run " + runNumber);
+		try {
+			return (ArrayList<QoS>) DeltaIOTConnector.networkMgmt.getNetworkQoS(runNumber);
+		} catch (Exception e) {
+			System.err.println("Warning: Failed to get QoS data on timeout: " + e.getMessage());
+			return new ArrayList<QoS>();
+		}
 	}
 	
 	
@@ -636,13 +599,23 @@ public class SolvePOMDP {
 			}
 
 			// set failure for mote 10 at timestep 60
-			if (timestep == 250) {
+			/*if (timestep == 250) {
 				noiseInjector.turnLinkOff(7, 3);
 				noiseInjector.turnLinkOff(12, 3);
-			}
+			}*/
 			
 			/*
-			 * MONITOR
+			 * MAPE-K PHASE: MONITOR (timestep-level initialization)
+			 * 
+			 * Initialize the monitoring phase for this timestep by:
+			 * - Retrieving current network state (all motes)
+			 * - Getting the initial POMDP state from previous timestep
+			 * - Preparing for per-mote adaptation loop
+			 * 
+			 * Note: Per-mote MAPE-K cycles happen within the loop below.
+			 * Each mote goes through: Analyse -> Plan -> Execute -> Monitor
+			 * The baseline for each mote is implicitly the previous mote's post-action state
+			 * (or the previous timestep's last post-action state for the first mote).
 			 */
 			JsonObject obj =new JsonObject();
 			obj.put("timestep", timestep+"");
@@ -691,37 +664,36 @@ public class SolvePOMDP {
 				Mote m = iot.DeltaIOTConnector.motes.get(moteIndex);
 				System.out.println("\nTime Step: "+timestep);
 				// Simulator object holds the list of motes, gateways, turnOrder, runInfo and qos values.
-				// THis will simulate sending packets through the network to the gateways
+				// This will simulate sending packets through the network to the gateways
 				// Each gateway will aggregate information about packet-loss and power-consumption
 				// The QoS values will be stored in the Simulator object
 				
 				/*
-				 * ANALYSE
+				 * MAPE-K PHASE: MONITOR (implicit via previous mote's post-action state)
+				 * 
+				 * The baseline network state for this mote is implicitly available from the
+				 * previous mote's post-action simulation run. Since we're looping over motes
+				 * sequentially, each mote's "baseline" is the previous mote's "post-action" state.
+				 * This eliminates the need for a separate baseline measurement per mote.
+				 * 
+				 * For the first mote in the loop, the baseline comes from:
+				 * - Previous timestep's last post-action run (if timestep > 0)
+				 * - Or default state 0 (if timestep == 0)
 				 */
-				// Run simulation to get baseline QoS before planning
-				// This creates a new run. After this call, increment timestepiot to track the run number
-				// Capture stdout/stderr during first doSingleRun to suppress warnings
-				PrintStream originalOut1 = System.out;
-				PrintStream originalErr1 = System.err;
-				ByteArrayOutputStream outCapture1 = new ByteArrayOutputStream();
-				ByteArrayOutputStream errCapture1 = new ByteArrayOutputStream();
-				PrintStream outStream1 = new PrintStream(outCapture1, true);
-				PrintStream errStream1 = new PrintStream(errCapture1, true);
-				try {
-					System.setOut(outStream1);
-					System.setErr(errStream1);
-					iot.DeltaIOTConnector.networkMgmt.getSimulator().doSingleRun();
-				} finally {
-					System.setOut(originalOut1);
-					System.setErr(originalErr1);
-				}
-				iot.DeltaIOTConnector.timestepiot++; // Track the run that was just created
 				
 				iot.DeltaIOTConnector.selectedmote = m;
 				System.out.println("Mote Id"+iot.DeltaIOTConnector.selectedmote.getMoteid());
 				
 				obj.put("Mote Id", iot.DeltaIOTConnector.selectedmote.getMoteid()+"");		
 			
+				/*
+				 * MAPE-K PHASE: ANALYSE
+				 * 
+				 * Compute belief state and satisfaction probabilities. The belief represents our
+				 * uncertainty about which state the system is currently in. The baseline network
+				 * state is implicitly available from the previous mote's post-action simulation run
+				 * (or from the previous timestep for the first mote).
+				 */
 				BeliefPoint initialbelief = pomdp.getInitialBelief(); // b0
 				double beliefValues[] = initialbelief.getBelief();
 				System.out.println(beliefValues[0]+" "+beliefValues[1]+" "+beliefValues[2]+" "+beliefValues[3]);
@@ -733,7 +705,11 @@ public class SolvePOMDP {
 				pwRPLSatProb.flush();				
 				
 				/*
-				 * PLANNING
+				 * MAPE-K PHASE: PLAN
+				 * 
+				 * Solve the POMDP to determine the optimal adaptation action given the current
+				 * belief state. Each AlphaVector encodes a linear function over beliefs V(b) = alpha * b.
+				 * The solver computes a value function that represents the expected long-term reward.
 				 */
 				// Each AlphaVector encodes a linear function over beliefs V(b) = alpha * b
 				ArrayList<AlphaVector> V1 = solver.solve(pomdp);
@@ -744,23 +720,39 @@ public class SolvePOMDP {
 					System.out.println("~~~~~~~~~~~~~~~~~~~~~~~");
 					System.out.println("Action labels: "+ V1.get(i).getAction());
 					System.out.println("~~~~~~~~~~~~~~~~~~~~~~~");
-					double expectedvalue=V1.get(i).getDotProduct(pomdp.getInitialBelief().getBelief());
+					double expectedvalue = V1.get(i).getDotProduct(pomdp.getInitialBelief().getBelief());
 					System.out.println("Expected Value: "+ expectedvalue);
 				}
 
-				// Select action based on solver type
+				// Select action using stochastic policy (softmax) based on Q-functions
 				int selectedAction;
-
-				// Standard action selection for other solvers
-				int bestindex = AlphaVector.getBestVectorIndex(pomdp.getInitialBelief().getBelief(), V1);
-				selectedAction = V1.get(bestindex).getAction();
+				if (solver instanceof ERPBVI) {
+					// ERPBVI has Q-functions directly available
+					erPolicy = new ERPolicy(pomdp, (ERPBVI)solver, new Random(222));
+					selectedAction = erPolicy.selectAction(pomdp.getInitialBelief());
+				} else if (solver instanceof ERPerseus) {
+					// ERPerseus: extract Q-functions from value function
+					double lambda = ((ERPerseus) solver).getLambda();
+					erPolicy = new ERPolicy(pomdp, V1, lambda, new Random(222));
+					selectedAction = erPolicy.selectAction(pomdp.getInitialBelief());
+				} else {
+					// Fallback for other solvers (deterministic/greedy)
+					int bestIndex = AlphaVector.getBestVectorIndex(pomdp.getInitialBelief().getBelief(), V1);
+					selectedAction = V1.get(bestIndex).getAction();
+					System.out.println("Selected Action (greedy): " + selectedAction);
+				}
+				
 				System.out.println("Selected Action: " + selectedAction);				
 				
 				pwaction.println(timestep+" "+selectedAction);
 				pwaction.flush();
 				
 				/*
-				 * EXECUTE
+				 * MAPE-K PHASE: EXECUTE
+				 * 
+				 * Step 1: Perform the selected action (DTP or ITP) which modifies network
+				 * configuration (transmission power, spreading factor, link distribution).
+				 * This also updates POMDP beliefs and transition probabilities.
 				 */
 				obj.put("Selected Action: ", selectedAction+"");
 				pomdp.setInitialBelief(initialbelief); // update initial belief for the next step
@@ -783,6 +775,28 @@ public class SolvePOMDP {
 				pomdp = iot.DeltaIOTConnector.p; // as POMDP is being updated in performAction, must adjust the variable `pomdp` here
 			 
 				System.out.println("Current State: " + pomdp.getCurrentState());
+				
+				/*
+				 * MAPE-K PHASE: MONITOR (post-execution measurement)
+				 * 
+				 * Monitor the network state after the action has been executed by running a simulation.
+				 * This doSingleRun() call simulates packet flow through the network to measure the
+				 * actual effects of the adaptation action.
+				 * 
+				 * What this monitoring phase does:
+				 * - Runs network simulation (doSingleRun()) to observe packet flow and network behavior
+				 * - Measures QoS metrics (packet loss, energy consumption) that reflect the action's impact
+				 * - Creates data that serves as the baseline for the next mote in the loop
+				 * - Enables sequential adaptation where each mote sees effects of previous motes
+				 * 
+				 * Why we need this simulation AFTER execution:
+				 * - Actions modify network settings (power, distribution, etc.)
+				 * - We need to observe/measure whether the adaptation achieved desired outcomes
+				 * - This feedback loop enables learning and adaptive behavior
+				 * 
+				 * Expected: 1 run per mote per timestep (post-action measurement only)
+				 * Each mote's baseline is the previous mote's post-action state.
+				 */
 				// It is best to increment timestepiot *after* doSingleRun(), because doSingleRun() actually creates the new run in the simulator,
 				// and only after that does the run count (timestepiot) reflect the latest run that contains the effect of the action.
 				// Capture stdout/stderr during doSingleRun to detect and suppress warnings
@@ -811,15 +825,18 @@ public class SolvePOMDP {
 				int currentRun = iot.DeltaIOTConnector.timestepiot;
 				
 				// Validate run number is reasonable (should not exceed expected number of runs)
-				// Expected: 2 runs per mote per timestep (before and after action)
-				int expectedMaxRuns = (timestep + 1) * numMotes * 2;
+				// Expected: 1 run per mote per timestep (post-action measurement only)
+				// Each mote's baseline is implicitly the previous mote's post-action state
+				int expectedMaxRuns = (timestep + 1) * numMotes;
 				if (currentRun > expectedMaxRuns) {
 					System.err.println("Warning: Run number " + currentRun + " exceeds expected maximum " + expectedMaxRuns);
 					System.err.println("Timestep: " + timestep + ", Mote: " + moteIndex + ", timestepiot: " + iot.DeltaIOTConnector.timestepiot);
 				}
 				
 				// Wait for QoS data to be ready before accessing it to prevent warnings
-				ArrayList<QoS> result = waitForQoSDataReady(currentRun, 10, 100);
+				// This ensures the simulator has completed data aggregation for all motes
+				System.out.println("Waiting for QoS data ready...");
+				ArrayList<QoS> result = waitForQoSDataReady(currentRun, 50, 100);
 				if (result == null || result.isEmpty()) {
 					System.err.println("Warning: No QoS data available for run " + currentRun + ". Using defaults.");
 					System.err.println("Timestep: " + timestep + ", Mote: " + moteIndex + ", timestepiot: " + iot.DeltaIOTConnector.timestepiot);
@@ -830,9 +847,13 @@ public class SolvePOMDP {
 					System.out.println("QOS list size: "+result.size());
 				}
 				
-			 	/*
-			 	 * MONITOR
-			 	 */
+				// Extract and log QoS metrics from the post-action simulation run.
+				// These metrics represent the network state AFTER the adaptation action.
+				// This state will serve as the baseline for the next mote in the loop
+				// (or for the next timestep if this is the last mote).
+				// 
+				// This completes the MAPE-K cycle for this mote:
+				// 1. MONITOR (implicit via previous mote) -> 2. ANALYSE -> 3. PLAN -> 4. EXECUTE -> 5. MONITOR (results)
 			 	// Validate that we have QoS data before accessing it
 			 	double packetLoss = 0.0;
 			 	double energyConsumption = 0.0;

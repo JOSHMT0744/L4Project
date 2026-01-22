@@ -593,10 +593,10 @@ public class DeltaIOTConnector {
 		// Despite being called "Initial" belief, consider this the current belief
 		this.updateObservationBelief(action, nextstate, obs);
 		
-		BeliefPoint b = p.updateBelief(p.getInitialBelief(), action, obs); // CHANGE THIS ADAPTATION FOR THE SMILE RULE
+		BeliefPoint newBelief = p.updateBelief(p.getInitialBelief(), action, obs); // CHANGE THIS ADAPTATION FOR THE SMILE RULE
 		
 		// Despite being called initialBelief, consider this the updated current belief for states
-		p.setInitialBelief(b);
+		p.setInitialBelief(newBelief);
 	
 		return 0;
 	}
