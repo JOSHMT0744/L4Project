@@ -306,8 +306,8 @@ public class Perseus implements Solver {
 		}
 		System.out.println();
 		
-		System.out.println("Best Index:  "+bestindex);
-		System.out.println("Selected Action"+V.get(bestindex).getAction());
+		//System.out.println("Best Index:  "+bestindex);
+		System.out.println(" "+V.get(bestindex).getAction());
 		// Use File constructor to properly join paths and handle absolute paths
 		File outputDir = new File(sp.getOutputDir());
 		File outputFile = new File(outputDir, pomdp.getInstanceName() + ".alpha");

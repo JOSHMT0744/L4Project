@@ -29,6 +29,10 @@ public class DeltaIOTConnector {
 	
 	public static POMDP p;
 	
+	// Static reference to the active connector instance (set by SolvePOMDP)
+	// This allows POMDP.nextState() to access the properly configured connector
+	// instead of creating a new instance without noiseInjector
+	public static DeltaIOTConnector activeInstance;
 	
 	//public static Probe probe;
 	//public static Effector effector;
@@ -48,9 +52,12 @@ public class DeltaIOTConnector {
 	
 	// History of mutual information values per mote for MIS calculation
 	private Map<Integer, ArrayList<Double>> miHistory;
-	private int lookback = 4; // m - lookback period for MIS calculation
+	private int lookback = 5; // m - lookback period for MIS calculation
 	// Track which timesteps have already had bounds written (to avoid duplicates)
 	private int lastBoundsTimestep = -1;
+	
+	// Track if header has been written to mote_metrics.txt
+	private static boolean moteMetricsHeaderWritten = false;
 	
 	// Surprise measure to use for gamma calculation: "CC" (Confidence-Corrected), "BF" (Bayes Factor), or "MIS" (Mutual Information Surprise)
 	private String surpriseMeasureForGamma = "CC"; // Default to Confidence-Corrected Surprise
@@ -58,6 +65,18 @@ public class DeltaIOTConnector {
 	// Output directory for file operations
 	private String outputDirectory = "L4Project/output_dir"; // Default, will be set by SolvePOMDP
 	
+	// class for causing breakages in the network
+	private NoiseInjector noiseInjector;
+
+
+	public void setNoiseInjector(NoiseInjector noiseInjector) {
+		this.noiseInjector = noiseInjector;
+	}
+
+	public NoiseInjector getNoiseInjector() {
+		return this.noiseInjector;
+	}
+
 	public void setOutputDirectory(String outputDir) {
 		this.outputDirectory = outputDir;
 	}
@@ -273,6 +292,90 @@ public class DeltaIOTConnector {
 	}
 	
 	/**
+	 * Logs comprehensive metrics for a mote and all its links at a given timestep.
+	 * Logs to a single comprehensive file with format: timestep moteId linkIndex source dest snr power distribution sf
+	 * If a mote has no links, logs a single line with linkIndex=-1 and other link fields as -1 or N/A.
+	 * 
+	 * @param mote The mote to log metrics for
+	 * @param timestep The current timestep
+	 */
+	public void logMoteAndLinkMetrics(Mote mote, int timestep) {
+		if (mote == null) {
+			System.err.println("Warning: Attempted to log metrics for null mote at timestep " + timestep);
+			return;
+		}
+		
+		try {
+			File file = new File(outputDirectory, "mote_metrics.txt");
+			// Ensure parent directory exists
+			if (file.getParentFile() != null && !file.getParentFile().exists()) {
+				file.getParentFile().mkdirs();
+			}
+			
+			// Write header on first write
+			boolean writeHeader = !moteMetricsHeaderWritten && !file.exists();
+			
+			try (BufferedWriter writer = new BufferedWriter(new FileWriter(file, true))) {
+				// Write header if this is the first write
+				if (writeHeader) {
+					writer.write("timestep moteId linkIndex source dest snr power distribution sf");
+					writer.newLine();
+					moteMetricsHeaderWritten = true;
+				}
+				int moteId = mote.getMoteid();
+				List<Link> links = mote.getLinks();
+				
+				if (links == null || links.isEmpty()) {
+					// Log mote with no links
+					writer.write(String.format("%d %d %d %d %d %.6f %d %d %d",
+						timestep, moteId, -1, -1, -1, Double.NaN, -1, -1, -1));
+					writer.newLine();
+				} else {
+					// Log each link
+					for (int linkIndex = 0; linkIndex < links.size(); linkIndex++) {
+						Link link = links.get(linkIndex);
+						if (link == null) {
+							// Skip null links
+							continue;
+						}
+						
+						try {
+							int source = link.getSource();
+							int dest = link.getDest();
+							double snr = link.getSNR();
+							int power = link.getPower();
+							int distribution = link.getDistribution();
+							int sf = link.getSF();
+							
+							// Format: timestep moteId linkIndex source dest snr power distribution sf
+							writer.write(String.format("%d %d %d %d %d %.6f %d %d %d",
+								timestep, moteId, linkIndex, source, dest, snr, power, distribution, sf));
+							writer.newLine();
+						} catch (Exception e) {
+							// Handle any errors accessing link properties
+							System.err.println("Warning: Error accessing link properties for mote " + moteId + 
+								", link " + linkIndex + " at timestep " + timestep + ": " + e.getMessage());
+							// Log partial data with error indicators
+							try {
+								writer.write(String.format("%d %d %d %d %d %.6f %d %d %d",
+									timestep, moteId, linkIndex, -1, -1, Double.NaN, -1, -1, -1));
+								writer.newLine();
+							} catch (IOException ioException) {
+								System.err.println("Error writing partial link data: " + ioException.getMessage());
+							}
+						}
+					}
+				}
+				writer.flush(); // Ensure data is written immediately
+			}
+		} catch (IOException e) {
+			System.err.println("Error writing mote metrics to file at timestep " + timestep + 
+				" for mote " + (mote != null ? mote.getMoteid() : "null") + ": " + e.getMessage());
+			e.printStackTrace();
+		}
+	}
+	
+	/**
 	 * Append MIS bounds to output file in format "timestep mis_lower mis_upper"
 	 * @param timestep Current timestep
 	 * @param lowerBound Lower bound of MIS
@@ -372,6 +475,14 @@ public class DeltaIOTConnector {
 	    } catch (IOException e) {
 	        e.printStackTrace();
 	    }
+	}
+	
+	/**
+	 * Clear the mote_metrics.txt file and reset the header flag so header will be written again
+	 */
+	public void clearMoteMetricsFile(String filename) {
+		clearFile(filename);
+		moteMetricsHeaderWritten = false; // Reset flag so header will be written on next write
 	}
 	
 	private void updateObservationBelief(int action, int nextstate, int obs) {
@@ -482,11 +593,10 @@ public class DeltaIOTConnector {
 		// Despite being called "Initial" belief, consider this the current belief
 		this.updateObservationBelief(action, nextstate, obs);
 		
-		BeliefPoint b = p.updateBelief(p.getInitialBelief(), action, obs); // CHANGE THIS ADAPTATION FOR THE SMILE RULE
+		BeliefPoint newBelief = p.updateBelief(p.getInitialBelief(), action, obs); // CHANGE THIS ADAPTATION FOR THE SMILE RULE
 		
-		// Compute surprise here
 		// Despite being called initialBelief, consider this the updated current belief for states
-		p.setInitialBelief(b);
+		p.setInitialBelief(newBelief);
 	
 		return 0;
 	}
@@ -494,27 +604,68 @@ public class DeltaIOTConnector {
 	
 	///SF Check
 	public void performDTP() { 		
-		int value;
+		// Check if mote is failed before performing actions
+		if (noiseInjector != null && noiseInjector.isMoteOff(
+			DeltaIOTConnector.selectedmote.getMoteid())) {
+				// skip this mote -> it's faild/off
+				return;
+			}
+
+		// First, ensure all failed links have distribution set to 0 across all motes
+		// This must happen before any other distribution adjustments
+		if (noiseInjector != null) {
+			for (Mote mote : DeltaIOTConnector.motes) {
+				for (Link link : mote.getLinks()) {
+					DeltaIOTConnector.selectedlink = link;
+					System.out.println("LINK OFF: " + link.getSource() + " -> " + link.getDest());
+					System.out.println("LINK DISTRIBUTION: " + DeltaIOTConnector.selectedlink.getDistribution());
+					System.out.println("LINK POWER: " + DeltaIOTConnector.selectedlink.getPower());
+					System.out.println("LINK SF: " + DeltaIOTConnector.selectedlink.getSF());
+					System.out.println("LINK SNR: " + DeltaIOTConnector.selectedlink.getSNR());
+					System.out.println("LINK SOURCE: " + DeltaIOTConnector.selectedlink.getSource());
+					System.out.println("LINK DEST: " + DeltaIOTConnector.selectedlink.getDest());
+					if (noiseInjector.isLinkOff(link.getSource(), link.getDest())) {
+						// Force distribution to 0 for failed links
+						DeltaIOTConnector.selectedlink.setDistribution(0);
+						// Apply settings to enforce the distribution
+						List<LinkSettings> linkSettings = new LinkedList<LinkSettings>();
+						linkSettings.add(new LinkSettings(mote.getMoteid(), DeltaIOTConnector.selectedlink.getDest(), DeltaIOTConnector.selectedlink.getPower(), 0, DeltaIOTConnector.selectedlink.getSF()));
+						DeltaIOTConnector.networkMgmt.getEffector().setMoteSettings(mote.getMoteid(), linkSettings);
+					}
+				}
+			}
+		}
+
+		int powerValue;
 		Link left, right;
 		int valueleft,valueright;
 
 		for(Link link : DeltaIOTConnector.selectedmote.getLinks()) {
-			//DeltaIOTConnector.selectedlink=m.getLink(0);
 			DeltaIOTConnector.selectedlink = link;
-				if (DeltaIOTConnector.selectedlink.getSNR() > 0 && DeltaIOTConnector.selectedlink.getPower() > 0) {				
-					value = DeltaIOTConnector.selectedlink.getPower() - 1; // decreasing power by 1
-					int valueSF = DeltaIOTConnector.selectedlink.getSF(); // spreading factor
-					if(valueSF > 7) {
-						//System.out.println(valueSF+"       "+value+"~~~~~~~~~~~~~");
-						valueSF=DeltaIOTConnector.selectedlink.getSF() - 1; // decreasing SF by 1
-						//System.out.println(valueSF+"       "+value+"~~~~~~~~~~~~~");
-					}
-					List<LinkSettings> newSettings = new LinkedList<LinkSettings>();
-					newSettings.add(new LinkSettings(DeltaIOTConnector.selectedmote.getMoteid(), DeltaIOTConnector.selectedlink.getDest(), value, DeltaIOTConnector.selectedlink.getDistribution(), valueSF));
-		
-					DeltaIOTConnector.networkMgmt.getEffector().setMoteSettings(DeltaIOTConnector.selectedmote.getMoteid(),newSettings);	
+
+			// check if link is failed before performing actions
+			// Distribution for failed links is already set to 0 in the initial loop above
+			if (noiseInjector != null &&
+				noiseInjector.isLinkOff(link.getSource(), link.getDest())
+			) {
+				// Skip processing this failed link - distribution is already set to 0
+				continue;
+			}	
+
+			if (DeltaIOTConnector.selectedlink.getSNR() > 0 && DeltaIOTConnector.selectedlink.getPower() > 0) {				
+				powerValue = DeltaIOTConnector.selectedlink.getPower() - 1; // decreasing power by 1
+				int valueSF = DeltaIOTConnector.selectedlink.getSF(); // spreading factor
+				if(valueSF > 7) {
+					//System.out.println(valueSF+"       "+value+"~~~~~~~~~~~~~");
+					valueSF=DeltaIOTConnector.selectedlink.getSF() - 1; // decreasing SF by 1
+					//System.out.println(valueSF+"       "+value+"~~~~~~~~~~~~~");
 				}
+				List<LinkSettings> newSettings = new LinkedList<LinkSettings>();
+				newSettings.add(new LinkSettings(DeltaIOTConnector.selectedmote.getMoteid(), DeltaIOTConnector.selectedlink.getDest(), powerValue, DeltaIOTConnector.selectedlink.getDistribution(), valueSF));
+	
+				DeltaIOTConnector.networkMgmt.getEffector().setMoteSettings(DeltaIOTConnector.selectedmote.getMoteid(),newSettings);	
 			}
+		}
 			
 				
 		for (Mote mote : DeltaIOTConnector.motes) {
@@ -522,6 +673,52 @@ public class DeltaIOTConnector {
 				
 				left = mote.getLinks().get(0);
 				right = mote.getLinks().get(1);
+				
+				// Check if either link is failed
+				boolean leftFailed = (noiseInjector != null && noiseInjector.isLinkOff(left.getSource(), left.getDest()));
+				boolean rightFailed = (noiseInjector != null && noiseInjector.isLinkOff(right.getSource(), right.getDest()));
+				
+				// If a link is failed, ensure its distribution is 0 and give all traffic to the other link
+				if (leftFailed && !rightFailed) {
+					left.setDistribution(0);
+					right.setDistribution(100);
+					// Apply settings to enforce the distribution
+					List<LinkSettings> leftSettings = new LinkedList<LinkSettings>();
+					leftSettings.add(new LinkSettings(mote.getMoteid(), left.getDest(), left.getPower(), 0, left.getSF()));
+					DeltaIOTConnector.networkMgmt.getEffector().setMoteSettings(mote.getMoteid(), leftSettings);
+					
+					List<LinkSettings> rightSettings = new LinkedList<LinkSettings>();
+					rightSettings.add(new LinkSettings(mote.getMoteid(), right.getDest(), right.getPower(), 100, right.getSF()));
+					DeltaIOTConnector.networkMgmt.getEffector().setMoteSettings(mote.getMoteid(), rightSettings);
+					continue; // Skip normal distribution adjustment for failed links
+				} else if (rightFailed && !leftFailed) {
+					right.setDistribution(0);
+					left.setDistribution(100);
+					// Apply settings to enforce the distribution
+					List<LinkSettings> leftSettings = new LinkedList<LinkSettings>();
+					leftSettings.add(new LinkSettings(mote.getMoteid(), left.getDest(), left.getPower(), 100, left.getSF()));
+					DeltaIOTConnector.networkMgmt.getEffector().setMoteSettings(mote.getMoteid(), leftSettings);
+					
+					List<LinkSettings> rightSettings = new LinkedList<LinkSettings>();
+					rightSettings.add(new LinkSettings(mote.getMoteid(), right.getDest(), right.getPower(), 0, right.getSF()));
+					DeltaIOTConnector.networkMgmt.getEffector().setMoteSettings(mote.getMoteid(), rightSettings);
+					continue; // Skip normal distribution adjustment for failed links
+				} else if (leftFailed && rightFailed) {
+					// Both links failed - set both to 0
+					left.setDistribution(0);
+					right.setDistribution(0);
+					// Apply settings to enforce the distribution
+					List<LinkSettings> leftSettings = new LinkedList<LinkSettings>();
+					leftSettings.add(new LinkSettings(mote.getMoteid(), left.getDest(), left.getPower(), 0, left.getSF()));
+					DeltaIOTConnector.networkMgmt.getEffector().setMoteSettings(mote.getMoteid(), leftSettings);
+					
+					List<LinkSettings> rightSettings = new LinkedList<LinkSettings>();
+					rightSettings.add(new LinkSettings(mote.getMoteid(), right.getDest(), right.getPower(), 0, right.getSF()));
+					DeltaIOTConnector.networkMgmt.getEffector().setMoteSettings(mote.getMoteid(), rightSettings);
+					continue; // Skip normal distribution adjustment for failed links
+				}
+				
+				// Normal distribution adjustment only if neither link is failed
 				if (left.getPower() != right.getPower()) {
 					// If distribution of all links is 100 then change it to 50
 					// 50
@@ -549,14 +746,55 @@ public class DeltaIOTConnector {
 	
 	///perform actions for simulator DeltaIOT
 	public void performITP() { 	
-		int value;
+		// Check if mote is failed before performing actions
+		// TODO: CHANGE THIS MOTE FAILURE LOGIC
+		if (noiseInjector != null && noiseInjector.isMoteOff(
+			DeltaIOTConnector.selectedmote.getMoteid())) {
+				// skip this mote -> it's faild/off
+				return;
+			}
+
+		// First, ensure all failed links have distribution set to 0 across all motes
+		// This must happen before any other distribution adjustments
+		if (noiseInjector != null) {
+			for (Mote mote : DeltaIOTConnector.motes) {
+				for (Link link : mote.getLinks()) {
+					DeltaIOTConnector.selectedlink = link;
+					if (noiseInjector.isLinkOff(link.getSource(), link.getDest())) {
+						System.out.println("LINK OFF: " + link.getSource() + " -> " + link.getDest());
+						System.out.println("LINK DISTRIBUTION: " + DeltaIOTConnector.selectedlink.getDistribution());
+						System.out.println("LINK POWER: " + DeltaIOTConnector.selectedlink.getPower());
+						System.out.println("LINK SF: " + DeltaIOTConnector.selectedlink.getSF());
+						System.out.println("LINK SNR: " + DeltaIOTConnector.selectedlink.getSNR());
+						System.out.println("LINK SOURCE: " + DeltaIOTConnector.selectedlink.getSource());
+						System.out.println("LINK DEST: " + DeltaIOTConnector.selectedlink.getDest());
+						
+						// Force distribution to 0 for failed links
+						DeltaIOTConnector.selectedlink.setDistribution(0);
+						// Apply settings to enforce the distribution
+						List<LinkSettings> linkSettings = new LinkedList<LinkSettings>();
+						linkSettings.add(new LinkSettings(mote.getMoteid(), DeltaIOTConnector.selectedlink.getDest(), DeltaIOTConnector.selectedlink.getPower(), 0, DeltaIOTConnector.selectedlink.getSF()));
+						DeltaIOTConnector.networkMgmt.getEffector().setMoteSettings(mote.getMoteid(), linkSettings);
+					}
+				}
+			}
+		}
+
+		int powerValue;
 		Link left, right;
 		int valueleft,valueright;
 
 				for(Link link : DeltaIOTConnector.selectedmote.getLinks()) {
-				
-					//DeltaIOTConnector.selectedlink=m.getLink(0);
 					DeltaIOTConnector.selectedlink = link;
+
+					// check if link is failed before performing actions
+					// Distribution for failed links is already set to 0 in the initial loop above
+					if (noiseInjector != null &&
+						noiseInjector.isLinkOff(link.getSource(), link.getDest())
+					) {
+						// Skip processing this failed link - distribution is already set to 0
+						continue;
+					}					
 					
 					// SNR = Signal to Noise Ratio -> used as a basis for adjusting transmission power
 					// If SNR < 0, the logic increases the power, if SNR > 0, decrease power
@@ -564,14 +802,14 @@ public class DeltaIOTConnector {
 					if (DeltaIOTConnector.selectedlink.getSNR() < 0 && DeltaIOTConnector.selectedlink.getPower() < 15) {
 						//DeltaIOTConnector.selectedlink=l;
 					
-						value=DeltaIOTConnector.selectedlink.getPower() + 1;
+						powerValue=DeltaIOTConnector.selectedlink.getPower() + 1;
 						int valueSF=DeltaIOTConnector.selectedlink.getSF();
 						if(valueSF<12)
 						{
 						valueSF=DeltaIOTConnector.selectedlink.getSF() + 1;
 						}
 						List<LinkSettings> newSettings=new LinkedList<LinkSettings>();
-						newSettings.add(new LinkSettings(DeltaIOTConnector.selectedmote.getMoteid(), DeltaIOTConnector.selectedlink.getDest(), value, DeltaIOTConnector.selectedlink.getDistribution(), valueSF));
+						newSettings.add(new LinkSettings(DeltaIOTConnector.selectedmote.getMoteid(), DeltaIOTConnector.selectedlink.getDest(), powerValue, DeltaIOTConnector.selectedlink.getDistribution(), valueSF));
 			
 						DeltaIOTConnector.networkMgmt.getEffector().setMoteSettings(DeltaIOTConnector.selectedmote.getMoteid(),newSettings);
 						
@@ -581,8 +819,54 @@ public class DeltaIOTConnector {
 		for (Mote mote : DeltaIOTConnector.motes) {
 			if(mote.getLinks().size() == 2) {
 				
-				left =mote.getLinks().get(0);
+				left = mote.getLinks().get(0);
 				right = mote.getLinks().get(1);
+				
+				// Check if either link is failed
+				boolean leftFailed = (noiseInjector != null && noiseInjector.isLinkOff(left.getSource(), left.getDest()));
+				boolean rightFailed = (noiseInjector != null && noiseInjector.isLinkOff(right.getSource(), right.getDest()));
+				
+				// If a link is failed, ensure its distribution is 0 and give all traffic to the other link
+				if (leftFailed && !rightFailed) {
+					left.setDistribution(0);
+					right.setDistribution(100);
+					// Apply settings to enforce the distribution
+					List<LinkSettings> leftSettings = new LinkedList<LinkSettings>();
+					leftSettings.add(new LinkSettings(mote.getMoteid(), left.getDest(), left.getPower(), 0, left.getSF()));
+					DeltaIOTConnector.networkMgmt.getEffector().setMoteSettings(mote.getMoteid(), leftSettings);
+					
+					List<LinkSettings> rightSettings = new LinkedList<LinkSettings>();
+					rightSettings.add(new LinkSettings(mote.getMoteid(), right.getDest(), right.getPower(), 100, right.getSF()));
+					DeltaIOTConnector.networkMgmt.getEffector().setMoteSettings(mote.getMoteid(), rightSettings);
+					continue; // Skip normal distribution adjustment for failed links
+				} else if (rightFailed && !leftFailed) {
+					right.setDistribution(0);
+					left.setDistribution(100);
+					// Apply settings to enforce the distribution
+					List<LinkSettings> leftSettings = new LinkedList<LinkSettings>();
+					leftSettings.add(new LinkSettings(mote.getMoteid(), left.getDest(), left.getPower(), 100, left.getSF()));
+					DeltaIOTConnector.networkMgmt.getEffector().setMoteSettings(mote.getMoteid(), leftSettings);
+					
+					List<LinkSettings> rightSettings = new LinkedList<LinkSettings>();
+					rightSettings.add(new LinkSettings(mote.getMoteid(), right.getDest(), right.getPower(), 0, right.getSF()));
+					DeltaIOTConnector.networkMgmt.getEffector().setMoteSettings(mote.getMoteid(), rightSettings);
+					continue; // Skip normal distribution adjustment for failed links
+				} else if (leftFailed && rightFailed) {
+					// Both links failed - set both to 0
+					left.setDistribution(0);
+					right.setDistribution(0);
+					// Apply settings to enforce the distribution
+					List<LinkSettings> leftSettings = new LinkedList<LinkSettings>();
+					leftSettings.add(new LinkSettings(mote.getMoteid(), left.getDest(), left.getPower(), 0, left.getSF()));
+					DeltaIOTConnector.networkMgmt.getEffector().setMoteSettings(mote.getMoteid(), leftSettings);
+					
+					List<LinkSettings> rightSettings = new LinkedList<LinkSettings>();
+					rightSettings.add(new LinkSettings(mote.getMoteid(), right.getDest(), right.getPower(), 0, right.getSF()));
+					DeltaIOTConnector.networkMgmt.getEffector().setMoteSettings(mote.getMoteid(), rightSettings);
+					continue; // Skip normal distribution adjustment for failed links
+				}
+				
+				// Normal distribution adjustment only if neither link is failed
 				if (left.getPower() != right.getPower()) {
 					// If distribution of all links is 100 then change it to 50
 					// 50
