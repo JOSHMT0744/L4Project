@@ -599,10 +599,10 @@ public class SolvePOMDP {
 			}
 
 			// set failure for mote 10 at timestep 60
-			if (timestep == 100) {
+			/*if (timestep == 100) {
 				noiseInjector.turnLinkOff(7, 3);
 				noiseInjector.turnLinkOff(12, 3);
-			}
+			}*/
 			
 			/*
 			 * MAPE-K PHASE: MONITOR (timestep-level initialization)

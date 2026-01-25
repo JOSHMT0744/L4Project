@@ -1110,7 +1110,7 @@ def createCharts(df):
     satisfaction_fig.show()
 
     satisfaction_violins_fig = satisfactionViolins(df = df.filter(items=["timestep", "mecsattimestep", "rplsattimestep"]))
-    print(satisfaction_violins_fig)
+    #print(satisfaction_violins_fig)
     satisfaction_violins_fig.show()
 
 
@@ -1328,7 +1328,9 @@ def run():
         print("Close this terminal or press Ctrl+C to stop the server.")
         
         app = createInteractiveMoteMetricsApp(df_mote_metrics)
-        app.run(debug=True, port=8050)
+        # use_reloader=False: with debug=True the Werkzeug reloader would run this script
+        # twice (parent + child), causing createCharts() and its fig.show() to run twice.
+        app.run(debug=True, port=8050, use_reloader=False)
         
     except FileNotFoundError as e:
         print(f"\nWarning: Could not load mote metrics: {e}")

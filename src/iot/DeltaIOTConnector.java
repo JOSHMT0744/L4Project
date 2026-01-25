@@ -654,14 +654,8 @@ public class DeltaIOTConnector {
 	
 	///SF Check
 	public void performDTP() { 		
-		// Check if mote is failed before performing actions
-		if (noiseInjector != null && noiseInjector.isMoteOff(
-			DeltaIOTConnector.selectedmote.getMoteid())) {
-				// skip this mote -> it's faild/off
-				return;
-			}
-
-		// First, ensure all failed links have distribution set to 0 across all motes
+		// First, ensure all failed links (and links from off motes) have distribution set to 0 across all motes.
+		// isLinkOff(source,dest) returns true when the link is failed or when the source mote is off.
 		// This must happen before any other distribution adjustments
 		if (noiseInjector != null) {
 			for (Mote mote : DeltaIOTConnector.motes) {
@@ -797,15 +791,8 @@ public class DeltaIOTConnector {
 	
 	///perform actions for simulator DeltaIOT
 	public void performITP() { 	
-		// Check if mote is failed before performing actions
-		// TODO: CHANGE THIS MOTE FAILURE LOGIC
-		if (noiseInjector != null && noiseInjector.isMoteOff(
-			DeltaIOTConnector.selectedmote.getMoteid())) {
-				// skip this mote -> it's faild/off
-				return;
-			}
-
-		// First, ensure all failed links have distribution set to 0 across all motes
+		// First, ensure all failed links (and links from off motes) have distribution set to 0 across all motes.
+		// isLinkOff(source,dest) returns true when the link is failed or when the source mote is off.
 		// This must happen before any other distribution adjustments
 		if (noiseInjector != null) {
 			for (Mote mote : DeltaIOTConnector.motes) {
