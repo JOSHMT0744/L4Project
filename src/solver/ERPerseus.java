@@ -213,10 +213,10 @@ public class ERPerseus implements Solver {
 			BeliefPoint b = Btilde.get(beliefIndex);
 			
 			// Compute the backup (possibly ER) alpha vector at b
-			AlphaVector alpha = backup(pomdp, immediateRewards, gkao, b);
+			AlphaVector alpha = backup(pomdp, immediateRewards, gkao, V, b);
 			
 			// Compute and compare value at b under old and new alpha vectors
-			double oldValue = AlphaVector.getValue(b.getBelief(), V);
+			double oldValue = solver.AlphaVector.getValue(b.getBelief(), V);
 			double newValue = alpha.getDotProduct(b.getBelief());
 			
 			if (newValue >= oldValue) {
@@ -257,13 +257,14 @@ public class ERPerseus implements Solver {
 	 * Given:
 	 *   - pomdp: the POMDP model
 	 *   - immediateRewards: list of alpha vectors with immediate rewards for each action
-	 *   - gkao: a 3D array of AlphaVectors, indexed by [K][action][observation], representing (possibly) K sets of backup vectors from previous value functions or Q-functions
+	 *   - gkao: a 3D array of AlphaVectors, indexed by [k][action][observation], where k indexes value vectors in V; gkao[k][a][o] is the (a,o) one-step backup using V[k] as next-step value
+	 *   - V: the current value function (set of alpha vectors); used to compute softmax weights at b' as V[k]·b'
 	 *   - b: the belief point being considered
 	 *
 	 * The function proceeds as follows:
 	 *   1. For each action:
 	 *      a. For each observation:
-	 *         - If using entropy regularization (lambda > 0): forms a softmax-weighted combination of backup vectors from gkao across possible "future Q-sets".
+	 *         - If using entropy regularization (lambda > 0): forms a softmax-weighted combination of gkao[k][a][o] over k, with weights softmax(V[k]·b' / λ).
 	 *         - Otherwise: selects the best (maximum dot product) alpha vector from gkao for that action and observation.
 	 *      b. Sums the observation-specific vectors for the action, scales by discount, and adds immediate rewards to form a candidate action alpha-vector.
 	 *   2. After gathering candidate vectors (one per action), selects the final backup vector as follows:
@@ -272,7 +273,7 @@ public class ERPerseus implements Solver {
 	 * 
 	 * @return The backup alpha vector for use in the next value function
 	 */
-	private AlphaVector backup(POMDP pomdp, List<AlphaVector> immediateRewards, AlphaVector[][][] gkao, BeliefPoint b) {
+	private AlphaVector backup(POMDP pomdp, List<AlphaVector> immediateRewards, AlphaVector[][][] gkao, ArrayList<AlphaVector> V, BeliefPoint b) {
 		int nStates = pomdp.getNumStates();
 		int nActions = pomdp.getNumActions();
 		int nObservations = pomdp.getNumObservations();
@@ -291,18 +292,28 @@ public class ERPerseus implements Solver {
 
 				// For the current (action, observation), compute backup
 				if (lambda > 0.0) {
-					// --- Entropy-regularized backup: use softmax-weighted blend over all K Q-sets ---
+					// --- Entropy-regularized backup: use softmax-weighted blend over all K value vectors ---
 					// Update belief: b' = Update(b, action, obs)
 					BeliefPoint bPrime = pomdp.updateBelief(b, action, obs);
 					double[] bPrimeBelief = (bPrime != null) ? bPrime.getBelief() : b.getBelief();
 					
-					// Compute softmax at updated belief b' (not at b)
-					// Compute for each Q-function set (where k is equivalent to the number of actions, by our definition of V)
+					// Compute softmax at updated belief b': weight continuations by V[k]·b' (value of continuation k at b')
 					double[] dotProducts = new double[K];
 					for(int k = 0; k < K; k++) {
-						// Compute expected value of backup vector at updated belief b', normalized by lambda (temperature)
-						dotProducts[k] = gkao[k][action][obs].getDotProduct(bPrimeBelief) / lambda;
+						// Value of continuation k at b', normalized by lambda (temperature)
+						dotProducts[k] = V.get(k).getDotProduct(bPrimeBelief) / lambda;
 					}
+
+					// The approximate entropy-regularised utility at the next belief-state b'
+					/*double utility_bprime = 0.0;
+					for (int k = 0; k < K; k++) {
+						utility_bprime += Math.log(Math.exp(dotProducts[k])) - dotProducts[k];
+					}
+					utility_bprime /= lambda;
+					*/
+
+					// Since LogSumExp function is differntiable, we can copmute the gradient of the utility, which
+					// gives an alpha vector corresponding to the entropy regularised utility at the next belief
 					double[] weights = softmax(dotProducts); // Softmax weights over Q-sets
 					
 					// Weighted sum of vectors using softmax weights (alpha_{a,o} in ERPBVI)
@@ -322,7 +333,7 @@ public class ERPerseus implements Solver {
 					double maxVal = Double.NEGATIVE_INFINITY;
 					AlphaVector maxVector = null;
 					
-					// Find the backup vector (over K value sets) with the highest value at belief
+					// Find the backup vector (over K value vectors) with the highest value at belief
 					for(int k = 0; k < K; k++) {
 						double product = gkao[k][action][obs].getDotProduct(b.getBelief());
 						if(product > maxVal) {

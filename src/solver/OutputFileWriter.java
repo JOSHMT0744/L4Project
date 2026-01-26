@@ -56,7 +56,7 @@ public class OutputFileWriter {
 	 */
 	public static void dumpValueFunction(POMDP pomdp, ArrayList<AlphaVector> vectors, String outputFile, boolean useActionLabels, boolean append) {
 		try {
-			Writer output = new BufferedWriter(new FileWriter(outputFile));
+			Writer output = new BufferedWriter(new FileWriter(outputFile, append));
 			
 			for(AlphaVector a : vectors) {
 				String actionLabel = useActionLabels ? pomdp.getActionLabel(a.getAction()) : a.getAction()+"";

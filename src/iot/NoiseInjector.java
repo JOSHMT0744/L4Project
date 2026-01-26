@@ -157,7 +157,7 @@ public class NoiseInjector {
 		}
 		
 		// Update mote failure timers
-		if (moteFailureEnabled) {
+		if (moteFailureEnabled && motes != null) {
 			// Check for new mote failures
 			for (Mote mote : motes) {
 				if (mote == null) continue;
@@ -287,12 +287,17 @@ public class NoiseInjector {
 	}
 	
 	/**
-	 * Check if a link is currently off (failed)
+	 * Check if a link is currently off (failed).
+	 * A link is considered off if: the link is explicitly failed, or the source mote is off
+	 * (when a mote is off, all its outgoing links are treated as off).
 	 * @param source The source mote ID
 	 * @param dest The destination mote ID
 	 * @return true if the link is failed/off, false if it's operational/on
 	 */
 	public boolean isLinkOff(int source, int dest) {
+		if (isMoteOff(source)) {
+			return true;
+		}
 		return failedLinks.contains(source + "-" + dest);
 	}
 	
@@ -303,7 +308,7 @@ public class NoiseInjector {
 	 * @return true if the link is operational/on, false if it's failed/off
 	 */
 	public boolean isLinkOn(int source, int dest) {
-		return !failedLinks.contains(source + "-" + dest);
+		return !isLinkOff(source, dest);
 	}
 	
 	/**
