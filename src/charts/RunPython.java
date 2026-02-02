@@ -1,6 +1,5 @@
 package charts;
 import org.python.util.PythonInterpreter;
-import org.python.core.*;
 
 public class RunPython {
     public static void main(String[] args) {

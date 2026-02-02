@@ -50,8 +50,10 @@ out/
 .DS_Store?
 
 # Project specific
+output_dir
 output_dir/
 output_dir/*
+L4Project/output_dir/*
 *.txt
 !README.md
 !requirements.txt
