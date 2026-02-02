@@ -16,7 +16,7 @@ module L4Project {
 	// If these don't work, check Eclipse's module view or try:
 	// - For json-simple-4.0.1.jar: try "json.simple" or "json.simple.4.0.1"
 	// - For Simulator.jar: try "Simulator" (exact case matters)
-	requires Simulator;  // Contains deltaiot.* and simulator.* packages
+	requires transitive Simulator;  // Contains deltaiot.* and simulator.* packages (transitive: exposes Mote, Link, etc. to clients)
 	requires json.simple;  // Contains com.github.cliftonlabs.json_simple.*
 	requires gurobi;
 	requires joptimizer;

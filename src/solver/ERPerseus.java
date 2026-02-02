@@ -292,16 +292,16 @@ public class ERPerseus implements Solver {
 
 				// For the current (action, observation), compute backup
 				if (lambda > 0.0) {
-					// --- Entropy-regularized backup: use softmax-weighted blend over all K value vectors ---
+					// --- Entropy-regularized backup: use softmax-weighted blend over all K (action,obs) continuations ---
 					// Update belief: b' = Update(b, action, obs)
 					BeliefPoint bPrime = pomdp.updateBelief(b, action, obs);
 					double[] bPrimeBelief = (bPrime != null) ? bPrime.getBelief() : b.getBelief();
 					
-					// Compute softmax at updated belief b': weight continuations by V[k]·b' (value of continuation k at b')
+					// Compute softmax at updated belief b': weight by gkao[k][a][o]·b' (value of (a,o) continuation k at b')
+					// gkao[k][a][o] is the backup for "take a, see o, get V[k]"; must use it, not V[k], for correct ER backup
 					double[] dotProducts = new double[K];
 					for(int k = 0; k < K; k++) {
-						// Value of continuation k at b', normalized by lambda (temperature)
-						dotProducts[k] = V.get(k).getDotProduct(bPrimeBelief) / lambda;
+						dotProducts[k] = gkao[k][action][obs].getDotProduct(bPrimeBelief) / lambda;
 					}
 
 					// The approximate entropy-regularised utility at the next belief-state b'
@@ -312,7 +312,7 @@ public class ERPerseus implements Solver {
 					utility_bprime /= lambda;
 					*/
 
-					// Since LogSumExp function is differntiable, we can copmute the gradient of the utility, which
+					// Since LogSumExp function is differentiable, we can copmute the gradient of the utility, which
 					// gives an alpha vector corresponding to the entropy regularised utility at the next belief
 					double[] weights = softmax(dotProducts); // Softmax weights over Q-sets
 					

@@ -42,6 +42,7 @@ import deltaiot.client.SimulationClient;
 import deltaiot.services.Mote;
 import iot.DeltaIOTConnector;
 import iot.NoiseInjector;
+import iot.QoSDataHelper;
 import pomdp.POMDP;
 import pomdp.PomdpParser;
 import pomdp.SolverProperties;
@@ -407,87 +408,6 @@ public class SolvePOMDP {
 		}	
 	}
 	
-	/**
-	 * Waits for QoS data to be ready for a specific run by validating that entries exist and have valid data.
-	 * This ensures the simulator has complete data before we access it, preventing "Unknown value data" warnings.
-	 * The method directly checks the simulator's qosValues list size to determine if the requested run exists.
-	 * 
-	 * @param runNumber The run number to wait for (1-indexed). The function waits until at least this many runs exist.
-	 * @param maxRetries Maximum number of retry attempts (default: 20)
-	 * @param retryDelayMs Delay between retries in milliseconds (default: 50ms)
-	 * @return The last runNumber entries from the QoS list when ready, or the last result if timeout
-	 */
-	public static ArrayList<QoS> waitForQoSDataReady(int runNumber, int maxRetries, long retryDelayMs) {
-		System.out.println("Waiting for QoS data ready... maxRetries: "+maxRetries);
-		
-		// Validate inputs
-		if (runNumber <= 0) {
-			System.err.println("Warning: Invalid runNumber " + runNumber + ", must be > 0");
-			return new ArrayList<QoS>();
-		}
-		
-		for (int attempt = 0; attempt < maxRetries; attempt++) {
-			try {
-				// Directly check the simulator's qosValues list size
-				// This is more reliable than using getNetworkQoS() which has different semantics
-				if (DeltaIOTConnector.networkMgmt == null) {
-					System.err.println("Warning: networkMgmt is null, waiting...");
-					Thread.sleep(retryDelayMs);
-					continue;
-				}
-				
-				if (DeltaIOTConnector.networkMgmt.getSimulator() == null) {
-					System.err.println("Warning: simulator is null, waiting...");
-					Thread.sleep(retryDelayMs);
-					continue;
-				}
-				
-				List<QoS> qosValues = DeltaIOTConnector.networkMgmt.getSimulator().getQosValues();
-				if (qosValues == null) {
-					System.err.println("Warning: qosValues list is null, waiting...");
-					Thread.sleep(retryDelayMs);
-					continue;
-				}
-				
-				int qosSize = qosValues.size();
-				System.out.println("getting network qos");
-				System.out.println("run number: "+runNumber);
-				System.out.println("qosValues size: "+qosSize);
-				
-				// Check if we have at least runNumber entries in the QoS list
-				if (qosSize >= runNumber) {
-					// Data is ready - return the last runNumber entries using getNetworkQoS()
-					ArrayList<QoS> result = (ArrayList<QoS>) DeltaIOTConnector.networkMgmt.getNetworkQoS(runNumber);
-					System.out.println("result size: "+result.size());
-					return result;
-				}
-				
-				// Data not ready yet, wait and retry
-				Thread.sleep(retryDelayMs);
-			} catch (InterruptedException e) {
-				Thread.currentThread().interrupt();
-				break;
-			} catch (Exception e) {
-				System.err.println("Warning: Exception while waiting for QoS data: " + e.getMessage());
-				try {
-					Thread.sleep(retryDelayMs);
-				} catch (InterruptedException ie) {
-					Thread.currentThread().interrupt();
-					break;
-				}
-			}
-		}
-		
-		// Timeout - return whatever we have (may be partial data)
-		System.err.println("Warning: Timeout waiting for QoS data for run " + runNumber);
-		try {
-			return (ArrayList<QoS>) DeltaIOTConnector.networkMgmt.getNetworkQoS(runNumber);
-		} catch (Exception e) {
-			System.err.println("Warning: Failed to get QoS data on timeout: " + e.getMessage());
-			return new ArrayList<QoS>();
-		}
-	}
-	
 	
 	/**
 	 * Method to run experiments for DeltaIoT case using POMDP
@@ -580,9 +500,8 @@ public class SolvePOMDP {
 		// The simulator uses 1-indexed run numbers, so run number = timestepiot + 1
 		// After each doSingleRun(), timestepiot is incremented to match the created run
 		iot.DeltaIOTConnector.timestepiot = 0;
-		// Initialize timestep to 0 (monotonic increment only for timestep)
 		iot.DeltaIOTConnector.timestep = 0;
-		// set surprise measure for gamma calculation (MIS, MIS-BN, CC, or BF)
+		// set surprise measure for gamma calculation (MIS, CC, or BF)
 		deltaConnector.setSurpriseMeasureForGamma("MIS");
 		
 		// test turning a link fully of for full duration of simulation
@@ -599,10 +518,9 @@ public class SolvePOMDP {
 			}
 
 			// set failure for mote 10 at timestep 60
-			/*if (timestep == 100) {
+			if (timestep == 100) {
 				noiseInjector.turnLinkOff(7, 3);
-				noiseInjector.turnLinkOff(12, 3);
-			}*/
+			}
 			
 			/*
 			 * MAPE-K PHASE: MONITOR (timestep-level initialization)
@@ -623,13 +541,12 @@ public class SolvePOMDP {
 			System.out.println("motes recieved");
 
 			// For timestep 0, no runs exist yet, so use default state 0
-			// For timestep > 0, getInitialState() can safely access run 1 which exists from previous timesteps
+			// For timestep > 0, getInitialState() uses timestepiot (last run of previous timestep) for current network state
 			int currState;
 			if (timestep == 0) {
 				// No runs exist yet at timestep 0, use default state
 				currState = 0;
 			} else {
-				// For timestep > 0, run 1 exists from previous timesteps, so we can safely call getInitialState()
 				currState = pomdp.getInitialState();
 			}
 			System.out.println("Initial state: "+currState);
@@ -655,11 +572,6 @@ public class SolvePOMDP {
 			// End of randomised motes
 			
 			for(int moteIndex : moteIndexes) {
-				// Skip failed motes
-				if (noiseInjector != null && noiseInjector.isMoteOff(moteIndex)) {
-					continue;
-				}
-
 				Mote m = iot.DeltaIOTConnector.motes.get(moteIndex);
 				System.out.println("\nTime Step: "+timestep);
 				// Simulator object holds the list of motes, gateways, turnOrder, runInfo and qos values.
@@ -815,7 +727,7 @@ public class SolvePOMDP {
 					iot.DeltaIOTConnector.timestepiot++;
 				} finally {
 					// Restore original streams after doSingleRun() completes
-					// Note: waitForQoSDataReady() below will handle validation and any additional waiting needed
+					// Note: QoSDataHelper.waitForQoSDataReady() below handles validation and waiting
 					System.setOut(originalOut2);
 					System.setErr(originalErr2);
 				}
@@ -835,7 +747,7 @@ public class SolvePOMDP {
 				// Wait for QoS data to be ready before accessing it to prevent warnings
 				// This ensures the simulator has completed data aggregation for all motes
 				System.out.println("Waiting for QoS data ready...");
-				ArrayList<QoS> result = waitForQoSDataReady(currentRun, 50, 200);
+				ArrayList<QoS> result = QoSDataHelper.waitForQoSDataReady(currentRun, 50, 300);
 				if (result == null || result.isEmpty()) {
 					System.err.println("Warning: No QoS data available for run " + currentRun + ". Using defaults.");
 					System.err.println("Timestep: " + timestep + ", Mote: " + moteIndex + ", timestepiot: " + iot.DeltaIOTConnector.timestepiot);
@@ -1011,7 +923,7 @@ public class SolvePOMDP {
 		}
 		
 		SolvePOMDP ps = new SolvePOMDP();
-		ps.run("IoT2.POMDP");
+		ps.run("IoT.POMDP");
 
 		long endTime = System.currentTimeMillis();
 		long totalTime = endTime - startTime;

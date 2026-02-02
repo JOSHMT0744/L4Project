@@ -121,7 +121,7 @@ def surpriseChart(df):
     fig.update_layout(
         title="Mean Surprise Over Time",
         xaxis_title="Timestep",
-        yaxis_title="Mean Bayes Factor Surprise",
+        yaxis_title="Mean Surprise",
         legend_title="Surprise Types",
     )
     return fig
@@ -954,34 +954,32 @@ def createInteractiveMoteMetricsApp(df_mote_metrics):
         html.H2("Mote Metrics Interactive Dashboard", style={'marginBottom': '20px', 'paddingLeft': '20px'}),
         html.Hr(),
         
+        # Two-column layout: filters (left) and plots (right), same height
         html.Div([
+            # Filters column
             html.Div([
-                # Filters section
                 html.H5("Filters", style={'marginBottom': '15px'}),
                 
-                # Mote selector
                 html.Label("Select Motes:", style={'marginTop': '15px', 'display': 'block', 'fontWeight': 'bold'}),  
                 dcc.Dropdown(
                     id='mote-selector',
                     options=mote_options,
-                    value=default_motes,  # Use the default we calculated earlier
+                    value=default_motes,
                     multi=True,
                     placeholder="Select motes to display...",
                     style={'marginBottom': '15px'}
                 ),
                 
-                # Link selector
                 html.Label("Select Links:", style={'marginTop': '15px', 'display': 'block', 'fontWeight': 'bold'}),
                 dcc.Dropdown(
                     id='link-selector',
                     options=link_options,
-                    value=[],  # Default: empty (show all links for selected motes)
+                    value=[],
                     multi=True,
                     placeholder="Select links to display (leave empty for all)...",
                     style={'marginBottom': '15px'}
                 ),
                 
-                # Aggregation mode
                 html.Label("Aggregation Mode:", style={'marginTop': '15px', 'display': 'block', 'fontWeight': 'bold'}),  
                 dcc.RadioItems(
                     id='aggregation-mode',
@@ -989,19 +987,21 @@ def createInteractiveMoteMetricsApp(df_mote_metrics):
                         {'label': 'Per Link', 'value': 'all_links'},
                         {'label': 'Per Mote (avg)', 'value': 'per_mote'}
                     ],
-                    value=default_agg_mode,  # Use the default we calculated earlier
+                    value=default_agg_mode,
                     style={'marginBottom': '15px'}
                 ),
                 
-                # Info text
                 html.Div([
                     html.P("Select motes and/or links to filter the data. Use aggregation mode to control how data is grouped.", 
                            style={'marginTop': '20px', 'fontSize': '12px', 'color': '#666'})
                 ])
                 
-            ], style={'width': '25%', 'float': 'left', 'padding': '20px', 'backgroundColor': '#f5f5f5', 'height': '100vh', 'overflowY': 'auto'}),
+            ], style={
+                'width': '20%', 'minWidth': '200px', 'padding': '20px', 'backgroundColor': '#f5f5f5',
+                'overflowY': 'auto', 'boxSizing': 'border-box'
+            }),
             
-            # Main plot area - 3 separate independent graphs
+            # Plot column - 3 graphs
             html.Div([
                 dcc.Graph(
                     id='snr-plot', 
@@ -1021,8 +1021,14 @@ def createInteractiveMoteMetricsApp(df_mote_metrics):
                     style={'height': '300px'},
                     config={'displayModeBar': True, 'displaylogo': False}
                 )
-            ], style={'width': '75%', 'float': 'right', 'padding': '20px'})
-        ])
+            ], style={
+                'width': '75%', 'flex': '1', 'padding': '20px', 'overflowY': 'auto',
+                'boxSizing': 'border-box', 'minWidth': '0'
+            })
+        ], style={
+            'display': 'flex', 'flexDirection': 'row', 'alignItems': 'stretch',
+            'minHeight': 'calc(100vh - 80px)', 'width': '100%'
+        })
     ], style={'fontFamily': 'sans-serif, Arial'})
     
     # Define callback - ensure it fires on initial load, returns 3 separate figures

@@ -559,35 +559,11 @@ public class DeltaIOTConnector {
 			// Add a small offset to prevent log(0) when MIS is exactly 0, but scale it so small MIS values still produce reasonable gamma
 			double scaledMIS = Math.max(this.eps, absMIS);
 			logSurprise = Math.log(scaledMIS);
-		} else if (surpriseMeasureForGamma.equals("MIS-BN")) {
-			// Bound-normalized MIS: normalize MIS relative to its confidence bounds
-			// The bounds represent a confidence interval, so we normalize by the range
-			// This maps MIS to a value between 0 and 1 (or outside if MIS exceeds bounds)
-			double boundRange = misResult.upperBound - misResult.lowerBound;
-			
-			if (boundRange > this.eps) {
-				// Normalize: (MIS - lowerBound) / (upperBound - lowerBound)
-				// This maps lowerBound -> 0, upperBound -> 1
-				// Values outside [0,1] indicate MIS is outside the confidence interval
-				double normalizedMIS = (currentMIS - misResult.lowerBound) / (1/boundRange);
-				
-				// Clamp to [0, 1] to ensure valid log input, or use absolute value to preserve magnitude
-				// Using absolute value to handle cases where MIS might be slightly outside bounds
-				double clampedNormalizedMIS = Math.max(0.0, Math.min(1.0, Math.abs(normalizedMIS)));
-				
-				// Ensure we have a positive value for log
-				logSurprise = Math.log(Math.max(this.eps, clampedNormalizedMIS));
-			} else {
-				// Fallback: if bounds are invalid or too close, use absolute MIS value
-				double absMIS = Math.abs(currentMIS);
-				double scaledMIS = Math.max(this.eps, absMIS);
-				logSurprise = Math.log(scaledMIS);
-			}
 		}
 
 		// Predefined rate m dictates how much model changes
 		// p_c controls the rate of change of the transition belief
-		double p_c = 0.5;
+		double p_c = 0.6;
 		assert p_c >= 0 && p_c < 1;
 		double m = p_c / (1 - p_c);
 

@@ -277,7 +277,7 @@ public class POMDP {
 		int currentRun = Math.max(1, requestedRun);
 
 		// Wait for QoS data to be ready before accessing it to prevent warnings
-		ArrayList<QoS> result = main.SolvePOMDP.waitForQoSDataReady(currentRun, 20, 100);
+		ArrayList<QoS> result = iot.QoSDataHelper.waitForQoSDataReady(currentRun, 20, 100);
 		if (result == null || result.isEmpty()) {
 			System.err.println("Warning: No QoS data available for run " + currentRun + " (requested " + requestedRun + ") in nextState(), using current state");
 			// Return current state as fallback
@@ -305,14 +305,14 @@ public class POMDP {
 	
 	///Set it to currentState at the beginning. Each integer indicates the state
 	public int getInitialState() {
-		// (PacketLoss, PowerConsumption, Period (timestep)) for all timesteps up to now
-		// It appears that getNetworkQoS(1) is typically used as the initial reference,
-		// so we fetch the initial QoS data for run 1 rather than using currentRun.
-		// Wait for QoS data to be ready before accessing it to prevent warnings
-		ArrayList<QoS> result = main.SolvePOMDP.waitForQoSDataReady(1, 20, 100);
+		// At the start of timestep t (t>0), we need the network state from the END of the previous timestep.
+		// That is the last run of timestep t-1, i.e. run = timestepiot (which equals t * numMotes at timestep start).
+		// Using run 1 would use stale QoS from the very first run and prevents the belief from reflecting reality.
+		int runForTimestepStart = Math.max(1, iot.DeltaIOTConnector.timestepiot);
+		ArrayList<QoS> result = iot.QoSDataHelper.waitForQoSDataReady(runForTimestepStart, 20, 100);
 		
 		if (result == null || result.isEmpty()) {
-			System.err.println("Warning: No QoS data available for run 1 in getInitialState(), using default state 0");
+			System.err.println("Warning: No QoS data available for run " + runForTimestepStart + " in getInitialState(), using default state 0");
 			return 0;
 		}
 		
