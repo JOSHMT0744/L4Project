@@ -57,6 +57,10 @@ L4Project/output_dir/*
 *.txt
 !README.md
 !requirements.txt
+!docs/MAPE-K-DeltaIoT-Implementation.md
+!docs/MIS_pseudocode.md
+!docs/Report-Introduction-RelatedWork-Plan.md
+!docs/Surprise-Based-Learning-DeltaIoT.md
 
 # Logs
 *.log

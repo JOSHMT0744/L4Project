@@ -14,6 +14,21 @@ DeltaIoT is a sensor network of **Heat**, **PIR**, and **RFID** nodes with a **G
 - **Python 3.7+** (for `createCharts.py`)
 - **DeltaIoT / Simulator JARs** in `libraries/` (and any deps, e.g. `json-simple`). Ensure `Simulator.jar` and `deltaiot` JARs are on the classpath.
 
+## Machine setup (development and run environment)
+
+This project was developed and run on the following machine. You can update this section with your own environment for reproducibility.
+
+| Item | Details |
+|------|---------|
+| **OS** | Windows 10 (build 26100) |
+| **CPU** | x64 |
+| **RAM** | 16 GB |
+| **JDK** | OpenJDK 8+ or Oracle JDK 17 (e.g. `java -version` → 17.x) |
+| **Python** | 3.7+ (e.g. 3.10 or 3.11 with venv) |
+| **Working directory** | Project root `L4Project` (or workspace root; see Run on a Local Machine) |
+
+- **Notes:** A single full run (500 timesteps, default belief sampling) typically completes in a few minutes.
+
 ## Run on a Local Machine
 
 ### 1. Clone and go to the project
@@ -70,11 +85,15 @@ java -cp "bin;libraries/*" main.SolvePOMDP
 | Setting | Role |
 |--------|------|
 | `algorithmType` | `erperseus`, `perseus`, `erpbvi`, `faserpbvi` |
-| `lambda` | ER temperature (e.g. 0.5–1.0 for ERPerseus) |
+| `lambda` | ER temperature (e.g. 0.5–1.0 for ERPerseus); only used by ER solvers |
 | `outputDirectory` | Default `output_dir` |
 | `domainDirectory` | Default `domains` |
 | `beliefSamplingRuns`, `beliefSamplingSteps` | Belief set size for approximate solvers |
 | `valueFunctionTolerance`, `timeLimit` | Stopping conditions |
+| **Experiment (optional)** | |
+| `surpriseMeasureForGamma` | `CC`, `BF`, or `MIS` (default `MIS`) |
+| `p_c` | Probability of change in (0,1) for varSMiLE γ (default `0.5`) |
+| `runSeed` | Base random seed for reproducibility (default `222`; use different values for repeated runs) |
 
 ## Main Output Files
 

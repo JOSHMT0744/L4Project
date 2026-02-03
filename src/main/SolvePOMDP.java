@@ -66,6 +66,11 @@ public class SolvePOMDP {
 	private String domainDirName;    // name of the directory containing .POMDP files
 	private String domainDir;        // full path of the domain directory
 	
+	/** Optional experiment parameters (from solver.config): run seed, surprise measure, p_c. Used for reproducible runs and paper experiments. */
+	private int runSeed = 222;
+	private String surpriseMeasureForGamma = "MIS";
+	private double p_c = 0.5;
+	
 	/**
 	 * Find Python executable in virtual environment
 	 */
@@ -163,10 +168,27 @@ public class SolvePOMDP {
 		return value.trim();
 	}
 	
+	/** Optional property with default; used for experiment parameters (runSeed, surpriseMeasureForGamma, p_c). */
+	private String getProperty(Properties properties, String key, String defaultValue) {
+		String value = properties.getProperty(key);
+		if (value == null || value.trim().isEmpty()) {
+			return defaultValue;
+		}
+		return value.trim();
+	}
+	
 	/**
-	 * Find the solver.config file path, handling both IDE and command-line execution
+	 * Find the solver.config file path, handling both IDE and command-line execution.
+	 * If -DconfigPath=<path> is set, that path is used (for experiment runners).
 	 */
 	private String findConfigFile() {
+		String configPathOverride = System.getProperty("configPath");
+		if (configPathOverride != null && !configPathOverride.isEmpty()) {
+			File override = new File(configPathOverride);
+			if (override.exists()) {
+				return override.getAbsolutePath();
+			}
+		}
 		// Try relative path first (works when running from project root)
 		File configFile = new File("src/solver.config");
 		if (configFile.exists()) {
@@ -258,6 +280,17 @@ public class SolvePOMDP {
 		sp.setTimeLimit(Double.parseDouble(getPropertyOrThrow(properties, "timeLimit")));
 		sp.setValueFunctionTolerance(Double.parseDouble(getPropertyOrThrow(properties, "valueFunctionTolerance")));
 
+		// Optional experiment parameters (for reproducible runs and paper experiments)
+		this.runSeed = Integer.parseInt(getProperty(properties, "runSeed", "222"));
+		this.surpriseMeasureForGamma = getProperty(properties, "surpriseMeasureForGamma", "MIS");
+		this.p_c = Double.parseDouble(getProperty(properties, "p_c", "0.5"));
+		if (this.surpriseMeasureForGamma != null && !this.surpriseMeasureForGamma.matches("CC|BF|MIS")) {
+			throw new RuntimeException("surpriseMeasureForGamma must be CC, BF, or MIS; got '" + this.surpriseMeasureForGamma + "'");
+		}
+		if (this.p_c <= 0 || this.p_c >= 1) {
+			throw new RuntimeException("p_c must be in (0, 1); got " + this.p_c);
+		}
+
 		// Error checking solver.config parameters
 		if(!algorithmType.equals("perseus") && !algorithmType.equals("gip") && !algorithmType.equals("erpbvi") && !algorithmType.equals("erperseus")) {
 			throw new RuntimeException("Unexpected algorithm type in properties file");
@@ -289,23 +322,24 @@ public class SolvePOMDP {
 		System.out.println("Dump policy graph: "+sp.dumpPolicyGraph());
 		System.out.println("Dump action labels: "+sp.dumpActionLabels());
 		System.out.println("Lambda: "+sp.getLambda());
+		System.out.println("Run seed: "+runSeed+", Surprise measure: "+surpriseMeasureForGamma+", p_c: "+p_c);
 		
-		// load required POMDP algorithm
+		// load required POMDP algorithm (use runSeed for reproducible experiments)
 		switch (algorithmType) {
 			case "gip":
 				throw new RuntimeException("GIP is not supported");
 			case "perseus":
-				this.solver = new Perseus(sp, new Random(222));
+				this.solver = new Perseus(sp, new Random(runSeed));
 				break;
 			case "erperseus":
-				this.solver = new ERPerseus(sp, new Random(222), sp.getLambda());
+				this.solver = new ERPerseus(sp, new Random(runSeed), sp.getLambda());
 				break;
 			case "fasterpbvi":
-				this.solver = new fastERPBVI(sp, new Random(222), sp.getLambda(), false);
+				this.solver = new fastERPBVI(sp, new Random(runSeed), sp.getLambda(), false);
 				break;
 			case "erpbvi":
 				// Entropy-Regularized PBVI with default parameters
-				this.solver = new ERPBVI(sp, new Random(222), sp.getLambda(), false);
+				this.solver = new ERPBVI(sp, new Random(runSeed), sp.getLambda(), false);
 				break;
 			default:
 				throw new RuntimeException("Unexpected algorithm type in properties file");
@@ -465,7 +499,7 @@ public class SolvePOMDP {
 		}
 		POMDP pomdp = PomdpParser.readPOMDP(pomdpFile.getAbsolutePath());
 		
-		int numTimesteps = 300;
+		int numTimesteps = 500;
 		// set alpha-vectors here (in future can have in POMDP file)
 		iot.DeltaIOTConnector.p=pomdp;		
 		
@@ -501,11 +535,12 @@ public class SolvePOMDP {
 		// After each doSingleRun(), timestepiot is incremented to match the created run
 		iot.DeltaIOTConnector.timestepiot = 0;
 		iot.DeltaIOTConnector.timestep = 0;
-		// set surprise measure for gamma calculation (MIS, CC, or BF)
-		deltaConnector.setSurpriseMeasureForGamma("MIS");
+		// Experiment parameters from solver.config (surprise measure, p_c)
+		deltaConnector.setSurpriseMeasureForGamma(surpriseMeasureForGamma);
+		deltaConnector.setP_c(p_c);
 		
 		// test turning a link fully of for full duration of simulation
-		noiseInjector.setLinkFailureDuration(50);	
+		//noiseInjector.setLinkFailureDuration(50);	
 
 		for (int timestep = 0; timestep < numTimesteps; timestep++) {
 			// Set the static timestep variable to current loop timestep for use in MIS calculation
@@ -518,9 +553,9 @@ public class SolvePOMDP {
 			}
 
 			// set failure for mote 10 at timestep 60
-			if (timestep == 100) {
+			/*if (timestep == 100) {
 				noiseInjector.turnLinkOff(7, 3);
-			}
+			}*/
 			
 			/*
 			 * MAPE-K PHASE: MONITOR (timestep-level initialization)
@@ -561,8 +596,8 @@ public class SolvePOMDP {
 				moteIndexes[i] = i;
 			}
 			// Fisher–Yates shuffle
-			// Use a seed based on timestep to make shuffle deterministic but still vary by timestep
-			Random random = new Random(222 + timestep);
+			// Use runSeed + timestep for reproducible but varied order per timestep
+			Random random = new Random(runSeed + timestep);
 			for (int i = numMotes - 1; i > 0; i--) {
 			    int j = random.nextInt(i + 1);
 			    int tmp = moteIndexes[i];
@@ -639,12 +674,12 @@ public class SolvePOMDP {
 				int selectedAction;
 				if (solver instanceof ERPBVI) {
 					// ERPBVI has Q-functions directly available
-					erPolicy = new ERPolicy(pomdp, (ERPBVI)solver, new Random(222));
+					erPolicy = new ERPolicy(pomdp, (ERPBVI)solver, new Random(runSeed));
 					selectedAction = erPolicy.selectAction(pomdp.getInitialBelief());
 				} else if (solver instanceof ERPerseus) {
 					// ERPerseus: extract Q-functions from value function
 					double lambda = ((ERPerseus) solver).getLambda();
-					erPolicy = new ERPolicy(pomdp, V1, lambda, new Random(222));
+					erPolicy = new ERPolicy(pomdp, V1, lambda, new Random(runSeed));
 					selectedAction = erPolicy.selectAction(pomdp.getInitialBelief());
 				} else {
 					// Fallback for other solvers (deterministic/greedy)
