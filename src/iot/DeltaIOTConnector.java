@@ -84,6 +84,9 @@ public class DeltaIOTConnector {
 	// Surprise measure to use for gamma calculation: "CC" (Confidence-Corrected), "BF" (Bayes Factor), or "MIS" (Mutual Information Surprise)
 	private String surpriseMeasureForGamma = "CC"; // Default to Confidence-Corrected Surprise
 	
+	// Probability of change (volatility): in (0, 1); controls m = p_c/(1-p_c) in varSMiLE gamma formula. Configurable for experiments.
+	private double p_c = 0.5;
+	
 	// Output directory for file operations
 	private String outputDirectory = "L4Project/output_dir"; // Default, will be set by SolvePOMDP
 	
@@ -105,6 +108,18 @@ public class DeltaIOTConnector {
 	
 	public String getOutputDirectory() {
 		return this.outputDirectory;
+	}
+	
+	/** Set p_c (probability of change) for varSMiLE; must be in (0, 1). Used in gamma = m*S/(1+m*S) with m = p_c/(1-p_c). */
+	public void setP_c(double p_c) {
+		if (p_c <= 0 || p_c >= 1) {
+			throw new IllegalArgumentException("p_c must be in (0, 1), got " + p_c);
+		}
+		this.p_c = p_c;
+	}
+	
+	public double getP_c() {
+		return this.p_c;
 	}
 	
 	public DeltaIOTConnector() {
@@ -562,10 +577,8 @@ public class DeltaIOTConnector {
 		}
 
 		// Predefined rate m dictates how much model changes
-		// p_c controls the rate of change of the transition belief
-		double p_c = 0.6;
-		assert p_c >= 0 && p_c < 1;
-		double m = p_c / (1 - p_c);
+		// p_c (probability of change) controls the rate of change of the transition belief; set via setP_c() for experiments
+		double m = this.p_c / (1.0 - this.p_c);
 
 		// varSMiLE gamma formula (Definition 4): gamma(S, m) = mS / (1 + mS)
 		// Equivalent form: gamma = 1 / (1 + 1/(m*S)) where S = exp(logSurprise)
