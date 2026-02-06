@@ -87,6 +87,9 @@ public class DeltaIOTConnector {
 	// Probability of change (volatility): in (0, 1); controls m = p_c/(1-p_c) in varSMiLE gamma formula. Configurable for experiments.
 	private double p_c = 0.5;
 	
+	// If true, use varSMiLE (surprise-weighted) transition belief updates; if false, use classic Bayesian (Dirichlet +1 only).
+	private boolean useSurpriseUpdating = true;
+	
 	// Output directory for file operations
 	private String outputDirectory = "L4Project/output_dir"; // Default, will be set by SolvePOMDP
 	
@@ -120,6 +123,11 @@ public class DeltaIOTConnector {
 	
 	public double getP_c() {
 		return this.p_c;
+	}
+	
+	/** Set whether to use surprise-based (varSMiLE) or classic Bayesian transition belief updates. */
+	public void setUseSurpriseUpdating(boolean useSurpriseUpdating) {
+		this.useSurpriseUpdating = useSurpriseUpdating;
 	}
 	
 	public DeltaIOTConnector() {
@@ -548,6 +556,12 @@ public class DeltaIOTConnector {
 		for (int stateIndex = 0; stateIndex < p.getNumStates(); stateIndex++) {
 			transitionBeliefCurrTemp[stateIndex][action][nextstate] += 1.0; // update by relative confidence we are in each state?
 			transitionBeliefResetTemp[stateIndex][action][nextstate] += 1.0;
+		}
+
+		// Classic Bayesian: use updated pseudo-counts only (no surprise, no gamma blend)
+		if (!useSurpriseUpdating) {
+			p.transitionBeliefCurr = transitionBeliefCurrTemp;
+			return;
 		}
 
 		// Select which surprise measure to use for gamma calculation

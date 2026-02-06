@@ -61,6 +61,7 @@ L4Project/output_dir/*
 !docs/MIS_pseudocode.md
 !docs/Report-Introduction-RelatedWork-Plan.md
 !docs/Surprise-Based-Learning-DeltaIoT.md
+!docs/Results-Section-Plan.md
 
 # Logs
 *.log
