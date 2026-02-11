@@ -1,1 +1,77 @@
+<<<<<<< HEAD
 /bin/
+=======
+# Eclipse IDE
+.settings/
+.project
+.classpath
+.metadata/
+bin/
+*.launch
+*.pydevproject
+.cproject
+
+# Java
+*.class
+*.jar
+*.war
+*.ear
+*.log
+hs_err_pid*
+replay_pid*
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+env/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE - IntelliJ IDEA
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+
+# IDE - VS Code
+.vscode/
+*.code-workspace
+
+# OS
+.DS_Store
+.DS_Store?
+
+# Project specific
+output_dir
+output_dir/
+output_dir/*
+L4Project/output_dir/*
+*.txt
+!README.md
+!requirements.txt
+!docs/MAPE-K-DeltaIoT-Implementation.md
+!docs/MIS_pseudocode.md
+!docs/Report-Introduction-RelatedWork-Plan.md
+!docs/Surprise-Based-Learning-DeltaIoT.md
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.temp
+*~
+.cache/
+>>>>>>> cc7dc8e4cf87526637ef4bd814f36655c95d5516

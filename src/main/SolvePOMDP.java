@@ -18,16 +18,20 @@
 
 package main;
 
-import java.io.BufferedWriter;
+import java.io.BufferedReader;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.PrintStream;
 import java.io.PrintWriter;
 import java.io.UnsupportedEncodingException;
 import java.net.URLDecoder;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Properties;
 import java.util.Random;
 
@@ -37,39 +41,113 @@ import com.github.cliftonlabs.json_simple.JsonObject;
 import deltaiot.client.SimulationClient;
 import deltaiot.services.Mote;
 import iot.DeltaIOTConnector;
-import pruning.PruneStandard;
-import simulator.QoS;
-
-import pruning.PruneAccelerated;
-import pruning.PruneMethod;
-import solver.AlphaVector;
-import solver.BeliefPoint;
-import solver.Solver;
-import solver.SolverApproximate;
-import solver.SolverExact;
-
-import lpsolver.LPGurobi;
-import lpsolver.LPModel;
-import lpsolver.LPSolve;
-import lpsolver.LPjoptimizer;
+import iot.NoiseInjector;
+import iot.QoSDataHelper;
 import pomdp.POMDP;
-//import pomdp.Parser;
 import pomdp.PomdpParser;
 import pomdp.SolverProperties;
-
-import charts.LineChart;
-import charts.BoxWhiskerChart;
+import simulator.QoS;
+import solver.AlphaVector;
+import solver.BeliefPoint;
+import solver.ERPBVI;	
+import solver.Solver;
+import solver.Perseus;
+import solver.ERPerseus;
+import solver.fastERPBVI;
+import solver.ERPolicy;
 
 
 
 public class SolvePOMDP {
 	/* Class for configuring and running each component of the  */
 	private SolverProperties sp;     // object containing user-defined properties
-	private PruneMethod pm;          // pruning method used by incremental pruning
-	private LPModel lp;              // linear programming solver used by incremental pruning
 	private Solver solver;           // the solver that we use to solve a POMDP, which is exact or approximate
+	private ERPolicy erPolicy;       // the entropy-regularized policy that we use to select actions
 	private String domainDirName;    // name of the directory containing .POMDP files
 	private String domainDir;        // full path of the domain directory
+	
+	/** Optional experiment parameters (from solver.config): run seed, surprise measure, p_c. Used for reproducible runs and paper experiments. */
+	private int runSeed = 222;
+	private String surpriseMeasureForGamma = "MIS";
+	private double p_c = 0.5;
+	
+	/**
+	 * Find Python executable in virtual environment
+	 */
+	private static String findPythonExecutable() {
+		// Try Windows path first
+		File venvWindows = new File(".venv\\Scripts\\python.exe");
+		if (venvWindows.exists()) {
+			return venvWindows.getPath();
+		}
+		
+		// Try Linux/Mac path
+		File venvUnix = new File(".venv/bin/python");
+		if (venvUnix.exists()) {
+			return venvUnix.getPath();
+		}
+		
+		// Try from L4Project directory
+		File venvL4Windows = new File("L4Project/.venv/Scripts/python.exe");
+		if (venvL4Windows.exists()) {
+			return venvL4Windows.getPath();
+		}
+		
+		File venvL4Unix = new File("L4Project/.venv/bin/python");
+		if (venvL4Unix.exists()) {
+			return venvL4Unix.getPath();
+		}
+		
+		return null;
+	}
+	
+	/**
+	 * Find createCharts.py script
+	 */
+	private static String findChartsScript() {
+		File script = new File("createCharts.py");
+		if (script.exists()) {
+			return script.getPath();
+		}
+		
+		File scriptL4 = new File("L4Project/createCharts.py");
+		if (scriptL4.exists()) {
+			return scriptL4.getPath();
+		}
+		
+		return null;
+	}
+	
+	public static void runPython() throws Exception {
+		// Try to find Python executable in virtual environment
+		String pythonPath = findPythonExecutable();
+		if (pythonPath == null) {
+			System.err.println("Warning: Python virtual environment not found. Skipping chart generation.");
+			System.err.println("Expected path: .venv\\Scripts\\python.exe (Windows) or .venv/bin/python (Linux/Mac)");
+			return;
+		}
+		
+		// Find createCharts.py relative to project root
+		String chartsScript = findChartsScript();
+		if (chartsScript == null) {
+			System.err.println("Warning: createCharts.py not found. Skipping chart generation.");
+			return;
+		}
+		
+		ProcessBuilder pb = new ProcessBuilder(pythonPath, chartsScript);
+		pb.redirectErrorStream(true);
+		Process p = pb.start();
+		
+		BufferedReader reader = new BufferedReader(
+				new InputStreamReader(p.getInputStream())
+				);
+		
+		String line;
+		while ((line = reader.readLine()) != null) {
+			System.out.println("PYTHON: " + line); // receives pandas output
+		}
+		p.waitFor();
+	}
 	
 	public SolvePOMDP() {
 		// read parameters from config file
@@ -77,59 +155,148 @@ public class SolvePOMDP {
 		
 		// check if required directories exist
 		configureDirectories();
-
-		// configure LP solver
-		lp.setEpsilon(sp.getEpsilon());
-		lp.setAcceleratedLPThreshold(sp.getAcceleratedLPThreshold());
-		lp.setAcceleratedLPTolerance(sp.getAcceleratedLPTolerance());
-		lp.setCoefficientThreshold(sp.getCoefficientThreshold());
-		lp.init();
+	}
+	
+	/**
+	 * Helper method to get property with error handling
+	 */
+	private String getPropertyOrThrow(Properties properties, String key) {
+		String value = properties.getProperty(key);
+		if (value == null || value.trim().isEmpty()) {
+			throw new RuntimeException("Missing or empty property '" + key + "' in solver.config");
+		}
+		return value.trim();
+	}
+	
+	/** Optional property with default; used for experiment parameters (runSeed, surpriseMeasureForGamma, p_c). */
+	private String getProperty(Properties properties, String key, String defaultValue) {
+		String value = properties.getProperty(key);
+		if (value == null || value.trim().isEmpty()) {
+			return defaultValue;
+		}
+		return value.trim();
+	}
+	
+	/**
+	 * Find the solver.config file path, handling both IDE and command-line execution.
+	 * If -DconfigPath=<path> is set, that path is used (for experiment runners).
+	 */
+	private String findConfigFile() {
+		String configPathOverride = System.getProperty("configPath");
+		if (configPathOverride != null && !configPathOverride.isEmpty()) {
+			File override = new File(configPathOverride);
+			if (override.exists()) {
+				return override.getAbsolutePath();
+			}
+		}
+		// Try relative path first (works when running from project root)
+		File configFile = new File("src/solver.config");
+		if (configFile.exists()) {
+			return configFile.getPath();
+		}
+		
+		// Try L4Project/src/solver.config (when running from workspace root)
+		configFile = new File("L4Project/src/solver.config");
+		if (configFile.exists()) {
+			return configFile.getPath();
+		}
+		
+		// Try using class location (works when running from JAR or compiled classes)
+		try {
+			String path = SolvePOMDP.class.getProtectionDomain().getCodeSource().getLocation().getPath();
+			String decodedPath = URLDecoder.decode(path, "UTF-8");
+			
+			if (decodedPath.endsWith(".jar")) {
+				// Running from JAR - config should be in same directory or src/
+				int endIndex = decodedPath.lastIndexOf("/");
+				String jarDir = decodedPath.substring(0, endIndex);
+				configFile = new File(jarDir + "/src/solver.config");
+				if (configFile.exists()) {
+					return configFile.getPath();
+				}
+			} else {
+				// Running from compiled classes - look for src/ relative to class location
+				File classDir = new File(decodedPath);
+				// Navigate up from bin/ to project root, then to src/
+				File projectRoot = classDir.getParentFile().getParentFile();
+				configFile = new File(projectRoot, "src/solver.config");
+				if (configFile.exists()) {
+					return configFile.getPath();
+				}
+			}
+		} catch (Exception e) {
+			// Fall through to default
+		}
+		
+		// Default fallback
+		return "src/solver.config";
 	}
 	
 	/**
 	 * Read the solver.config file. It creates a properties object and it initialises
-	 * the pruning method and LP solver.
 	 */
 	private void readConfigFile() {
 		this.sp = new SolverProperties();
 		
 		Properties properties = new Properties();
 		
+		// Find config file relative to the class location (works from both IDE and command line)
+		String configPath = findConfigFile();
+		
 		try {
-			FileInputStream file = new FileInputStream("src/solver.config");
+			FileInputStream file = new FileInputStream(configPath);
 			properties.load(file);
 			file.close();
 		} catch (FileNotFoundException e) {
+			System.err.println("Error: Could not find solver.config at: " + configPath);
+			System.err.println("Current working directory: " + System.getProperty("user.dir"));
 			e.printStackTrace();
+			throw new RuntimeException("solver.config file not found. Please ensure it exists in the src/ directory.", e);
 		} catch (IOException e) {
 			e.printStackTrace();
+			throw new RuntimeException("Error reading solver.config file", e);
+		}
+		
+		// Validate that properties were loaded
+		if (properties.isEmpty()) {
+			throw new RuntimeException("solver.config file is empty or could not be read");
 		}
 		
 		// Exact Algorithm Settings
-		sp.setEpsilon(Double.parseDouble(properties.getProperty("epsilon")));
-		sp.setAcceleratedLPThreshold(Integer.parseInt(properties.getProperty("acceleratedLPThreshold")));
-		sp.setAcceleratedLPTolerance(Double.parseDouble(properties.getProperty("acceleratedTolerance")));
-		sp.setCoefficientThreshold(Double.parseDouble(properties.getProperty("coefficientThreshold")));
+		sp.setEpsilon(Double.parseDouble(getPropertyOrThrow(properties, "epsilon")));
 
 		// Directories
-		sp.setOutputDirName(properties.getProperty("outputDirectory"));
-		this.domainDirName = properties.getProperty("domainDirectory");
+		sp.setOutputDirName(getPropertyOrThrow(properties, "outputDirectory"));
+		this.domainDirName = getPropertyOrThrow(properties, "domainDirectory");
 		
 		// Approximate Algorithm Settings
-		sp.setBeliefSamplingRuns(Integer.parseInt(properties.getProperty("beliefSamplingRuns")));
-		sp.setBeliefSamplingSteps(Integer.parseInt(properties.getProperty("beliefSamplingSteps")));
+		sp.setBeliefSamplingRuns(Integer.parseInt(getPropertyOrThrow(properties, "beliefSamplingRuns")));
+		sp.setBeliefSamplingSteps(Integer.parseInt(getPropertyOrThrow(properties, "beliefSamplingSteps")));
 		
 		// General Settings
-		String algorithmType = properties.getProperty("algorithmType");
-		sp.setTimeLimit(Double.parseDouble(properties.getProperty("timeLimit")));
-		sp.setValueFunctionTolerance(Double.parseDouble(properties.getProperty("valueFunctionTolerance")));
+		String algorithmType = getPropertyOrThrow(properties, "algorithmType");
+		String lambda = getPropertyOrThrow(properties, "lambda");
+		sp.setLambda(Double.parseDouble(lambda));
+		sp.setTimeLimit(Double.parseDouble(getPropertyOrThrow(properties, "timeLimit")));
+		sp.setValueFunctionTolerance(Double.parseDouble(getPropertyOrThrow(properties, "valueFunctionTolerance")));
+
+		// Optional experiment parameters (for reproducible runs and paper experiments)
+		this.runSeed = Integer.parseInt(getProperty(properties, "runSeed", "222"));
+		this.surpriseMeasureForGamma = getProperty(properties, "surpriseMeasureForGamma", "MIS");
+		this.p_c = Double.parseDouble(getProperty(properties, "p_c", "0.5"));
+		if (this.surpriseMeasureForGamma != null && !this.surpriseMeasureForGamma.matches("CC|BF|MIS")) {
+			throw new RuntimeException("surpriseMeasureForGamma must be CC, BF, or MIS; got '" + this.surpriseMeasureForGamma + "'");
+		}
+		if (this.p_c <= 0 || this.p_c >= 1) {
+			throw new RuntimeException("p_c must be in (0, 1); got " + this.p_c);
+		}
 
 		// Error checking solver.config parameters
-		if(!algorithmType.equals("perseus") && !algorithmType.equals("gip")) {
+		if(!algorithmType.equals("perseus") && !algorithmType.equals("gip") && !algorithmType.equals("erpbvi") && !algorithmType.equals("erperseus")) {
 			throw new RuntimeException("Unexpected algorithm type in properties file");
 		}
 		
-		String dumpPolicyGraphStr = properties.getProperty("dumpPolicyGraph");
+		String dumpPolicyGraphStr = getPropertyOrThrow(properties, "dumpPolicyGraph");
 		if(!dumpPolicyGraphStr.equals("true") && !dumpPolicyGraphStr.equals("false")) {
 			throw new RuntimeException("Policy graph property must be either true or false");
 		}
@@ -137,7 +304,7 @@ public class SolvePOMDP {
 			sp.setDumpPolicyGraph(dumpPolicyGraphStr.equals("true") && algorithmType.equals("gip"));
 		}
 		
-		String dumpActionLabelsStr = properties.getProperty("dumpActionLabels");
+		String dumpActionLabelsStr = getPropertyOrThrow(properties, "dumpActionLabels");
 		if(!dumpActionLabelsStr.equals("true") && !dumpActionLabelsStr.equals("false")) {
 			throw new RuntimeException("Action label property must be either true or false");
 		}
@@ -148,61 +315,64 @@ public class SolvePOMDP {
 		System.out.println();
 		System.out.println("=== SOLVER PARAMETERS ===");
 		System.out.println("Epsilon: "+sp.getEpsilon());
-		System.out.println("Value function tolerance: "+sp.getValueFunctionTolerance());
-		System.out.println("Accelerated LP threshold: "+sp.getAcceleratedLPThreshold());
-		System.out.println("Accelerated LP tolerance: "+sp.getAcceleratedLPTolerance());
-		System.out.println("LP coefficient threshold: "+sp.getCoefficientThreshold());
+		System.out.println("Value function tolerance: "+sp.getValueFunctionTolerance());	
 		System.out.println("Time limit: "+sp.getTimeLimit());
 		System.out.println("Belief sampling runs: "+sp.getBeliefSamplingRuns());
 		System.out.println("Belief sampling steps: "+sp.getBeliefSamplingSteps());
 		System.out.println("Dump policy graph: "+sp.dumpPolicyGraph());
 		System.out.println("Dump action labels: "+sp.dumpActionLabels());
+		System.out.println("Lambda: "+sp.getLambda());
+		System.out.println("Run seed: "+runSeed+", Surprise measure: "+surpriseMeasureForGamma+", p_c: "+p_c);
 		
-		// load required LP solver
-		String lpSolver = properties.getProperty("lpsolver");
-		switch (lpSolver) {
-			case "gurobi":
-				this.lp = new LPGurobi();
-				break;
-			case "joptimizer":
-				this.lp = new LPjoptimizer();
-				break;
-			case "lpsolve":
-				this.lp = new LPSolve();
-				break;
-			default:
-				throw new RuntimeException("Unexpected LP solver in properties file");
-		}
-		
-		// load required pruning algorithm
-		String pruningAlgorithm = properties.getProperty("pruningMethod");
-		switch (pruningAlgorithm) {
-			case "standard":
-				this.pm = new PruneStandard();
-				this.pm.setLPModel(lp);
-				break;
-			case "accelerated":
-				this.pm = new PruneAccelerated();
-				this.pm.setLPModel(lp);
-				break;
-			default:
-				throw new RuntimeException("Unexpected pruning method in properties file");
-		}
-		
-		// load required POMDP algorithm
+		// load required POMDP algorithm (use runSeed for reproducible experiments)
 		switch (algorithmType) {
 			case "gip":
-				this.solver = new SolverExact(sp, lp, pm);
-				break;
+				throw new RuntimeException("GIP is not supported");
 			case "perseus":
-				this.solver = new SolverApproximate(sp, new Random(222));
+				this.solver = new Perseus(sp, new Random(runSeed));
+				break;
+			case "erperseus":
+				this.solver = new ERPerseus(sp, new Random(runSeed), sp.getLambda());
+				break;
+			case "fasterpbvi":
+				this.solver = new fastERPBVI(sp, new Random(runSeed), sp.getLambda(), false);
+				break;
+			case "erpbvi":
+				// Entropy-Regularized PBVI with default parameters
+				this.solver = new ERPBVI(sp, new Random(runSeed), sp.getLambda(), false);
 				break;
 			default:
 				throw new RuntimeException("Unexpected algorithm type in properties file");
 		}
 		
 		System.out.println("Algorithm: "+algorithmType);
-		System.out.println("LP solver: "+lp.getName());
+	}
+	
+	/**
+	 * Find the domain directory by searching from current directory up to project root
+	 */
+	private File findDomainDirectory(File startDir, String domainDirName) {
+		File current = startDir;
+		int maxDepth = 5; // Prevent infinite loops
+		int depth = 0;
+		
+		while (current != null && depth < maxDepth) {
+			File domainDir = new File(current, domainDirName);
+			if (domainDir.exists() && domainDir.isDirectory()) {
+				return domainDir;
+			}
+			// Also check for L4Project/domains pattern
+			File l4ProjectDir = new File(current, "L4Project");
+			if (l4ProjectDir.exists() && l4ProjectDir.isDirectory()) {
+				File domainDirInL4 = new File(l4ProjectDir, domainDirName);
+				if (domainDirInL4.exists() && domainDirInL4.isDirectory()) {
+					return domainDirInL4;
+				}
+			}
+			current = current.getParentFile();
+			depth++;
+		}
+		return null;
 	}
 	
 	/**
@@ -228,9 +398,19 @@ public class SolvePOMDP {
 			domainDir = workingDir+"/"+domainDirName;
 		}
 		else {
-			// solver has not been started from jar, so we assume that output exists in the current directory
-			sp.setWorkingDir("");
-			domainDir = domainDirName;
+			// solver has not been started from jar
+			// Try to find the project root by looking for common project directories
+			File currentDir = new File(System.getProperty("user.dir"));
+			File domainDirFile = findDomainDirectory(currentDir, domainDirName);
+			
+			if (domainDirFile != null && domainDirFile.exists()) {
+				domainDir = domainDirFile.getAbsolutePath();
+				sp.setWorkingDir(domainDirFile.getParent());
+			} else {
+				// Fallback: assume current directory
+				sp.setWorkingDir("");
+				domainDir = domainDirName;
+			}
 		}	
 
 		File dir = new File(sp.getOutputDir());
@@ -251,19 +431,12 @@ public class SolvePOMDP {
 	}
 	
 	/**
-	 * Close the LP (Linear Programming (Exact method)) solvers
-	 */
-	public void close () {
-		lp.close();
-	}
-	
-	/**
 	 * Solve a POMDP defined by a .POMDP file
 	 * @param pomdpFileName filename of a domain in the domain directory
 	 */
 	public void run(String pomdpFileName) {
 		
-		if(pomdpFileName.equals("IoT.POMDP"))
+		if(pomdpFileName.equals("IoT.POMDP") || pomdpFileName.equals("IoT2.POMDP"))
 		{
 			runCaseIoT(pomdpFileName);
 		}	
@@ -276,111 +449,213 @@ public class SolvePOMDP {
 	 */
 	public void runCaseIoT(String pomdpFileName) {
 		///Results Log
+		// Declare resources outside try block so they can be closed in finally
+		FileWriter fwMECSatProb = null;
+		PrintWriter pwMECSatProb = null;
+		FileWriter fwRPLSatProb = null;
+		PrintWriter pwRPLSatProb = null;
+		FileWriter fwMECSat = null;
+		PrintWriter pwMECSat = null;
+		FileWriter fwRPLSat = null;
+		PrintWriter pwRPLSat = null;
+		FileWriter fwaction = null;
+		PrintWriter pwaction = null;
+		FileWriter fwMECSattimestep = null;
+		PrintWriter pwMECSattimestep = null;
+		FileWriter fwRPLSattimestep = null;
+		PrintWriter pwRPLSattimestep = null;
+		
 		try
 		{
-		FileWriter fwMECSatProb=new FileWriter("MECSatProb.txt"); // Logs the probability that MEC is satisfied 
-		PrintWriter pwMECSatProb=new PrintWriter(fwMECSatProb);
-		FileWriter fwRPLSatProb=new FileWriter("RPLSatProb.txt"); // Logs the probability that RPL is satisfied
-		PrintWriter pwRPLSatProb=new PrintWriter(fwRPLSatProb);
+		// Use configured output directory instead of hardcoded path
+		String outputDir = sp.getOutputDir();
 		
-		FileWriter fwMECSat=new FileWriter("MECSat.txt"); // Logs the MECSat value
-		PrintWriter pwMECSat=new PrintWriter(fwMECSat);
-		FileWriter fwRPLSat=new FileWriter("RPLSat.txt"); // Logs the RPLSat value
-		PrintWriter pwRPLSat=new PrintWriter(fwRPLSat);
-		FileWriter fwaction=new FileWriter("SelectedAction.txt"); // Logs which action is taken increase or decrease power)
-		PrintWriter pwaction=new PrintWriter(fwaction);
+		fwMECSatProb = new FileWriter(new File(outputDir, "MECSatProb.txt").getPath()); // Logs the probability that MEC is satisfied 
+		pwMECSatProb = new PrintWriter(fwMECSatProb);
+		fwRPLSatProb = new FileWriter(new File(outputDir, "RPLSatProb.txt").getPath()); // Logs the probability that RPL is satisfied
+		pwRPLSatProb = new PrintWriter(fwRPLSatProb);
 		
-		FileWriter fwMECSattimestep=new FileWriter("MECSattimestep.txt"); // At specific timesteps
-		PrintWriter pwMECSattimestep=new PrintWriter(fwMECSattimestep);
-		FileWriter fwRPLSattimestep=new FileWriter("RPLSattimestep.txt");
-		PrintWriter pwRPLSattimestep=new PrintWriter(fwRPLSattimestep);
+		fwMECSat = new FileWriter(new File(outputDir, "MECSat.txt").getPath()); // Logs the MECSat value
+		pwMECSat = new PrintWriter(fwMECSat);
+		fwRPLSat = new FileWriter(new File(outputDir, "RPLSat.txt").getPath()); // Logs the RPLSat value
+		pwRPLSat = new PrintWriter(fwRPLSat);
+		fwaction = new FileWriter(new File(outputDir, "SelectedAction.txt").getPath()); // Logs which action is taken increase or decrease power)
+		pwaction = new PrintWriter(fwaction);
+		
+		fwMECSattimestep = new FileWriter(new File(outputDir, "MECSattimestep.txt").getPath()); // At specific timesteps
+		pwMECSattimestep = new PrintWriter(fwMECSattimestep);
+		fwRPLSattimestep = new FileWriter(new File(outputDir, "RPLSattimestep.txt").getPath());
+		pwRPLSattimestep = new PrintWriter(fwRPLSattimestep);
 		
 		JsonArray rlist = new JsonArray();
 		
 		
 		// read POMDP file
-		POMDP pomdp = PomdpParser.readPOMDP(domainDir+"/"+pomdpFileName);
+		File pomdpFile = new File(domainDir, pomdpFileName);
+		if (!pomdpFile.exists()) {
+			throw new RuntimeException("POMDP file not found: " + pomdpFile.getAbsolutePath() + 
+				"\nDomain directory: " + domainDir + 
+				"\nCurrent working directory: " + System.getProperty("user.dir"));
+		}
+		POMDP pomdp = PomdpParser.readPOMDP(pomdpFile.getAbsolutePath());
 		
-		int numTimesteps = 1000;
+		int numTimesteps = 500;
 		// set alpha-vectors here (in future can have in POMDP file)
-		iot.DeltaIOTConnector.p=pomdp;
-		
-		// list to record entropys
-		double[] entropies = new double[numTimesteps];
-		double[] mutualInformations = new double[numTimesteps];
-			
+		iot.DeltaIOTConnector.p=pomdp;		
 		
 		////////IoT Code///////////
 		
-		//iot.DeltaIOTConnector.timestepiot=timestep;
-		//System.out.println("timestep: "+timestep);
 		iot.DeltaIOTConnector.networkMgmt = new SimulationClient();
 		
 		iot.DeltaIOTConnector deltaConnector = new iot.DeltaIOTConnector();
-		deltaConnector.clearFile("gamma.txt");
-		deltaConnector.clearFile("surpriseBF.txt");
-		deltaConnector.clearFile("surpriseCC.txt");
-		iot.DeltaIOTConnector.timestepiot = 0;
 		
+		// set noise injector
+		NoiseInjector noiseInjector = new NoiseInjector();
+		noiseInjector.setEnabled(true);
+		noiseInjector.setLinkFailureEnabled(true);
+		noiseInjector.setMoteFailureEnabled(false);
+		noiseInjector.setSeed(42);
+		deltaConnector.setNoiseInjector(noiseInjector);
+		
+		// Set the active connector instance so POMDP.nextState() can use it
+		// This ensures the connector with properly configured noiseInjector is used
+		iot.DeltaIOTConnector.activeInstance = deltaConnector;
+
+		// Set output directory for DeltaIOTConnector to use
+		deltaConnector.setOutputDirectory(outputDir);
+		deltaConnector.clearFile(new File(outputDir, "gamma.txt").getPath());
+		deltaConnector.clearFile(new File(outputDir, "surpriseBF.txt").getPath());
+		deltaConnector.clearFile(new File(outputDir, "surpriseCC.txt").getPath());
+		deltaConnector.clearFile(new File(outputDir, "surpriseMIS.txt").getPath());
+		deltaConnector.clearFile(new File(outputDir, "MISBounds.txt").getPath());
+		deltaConnector.clearMoteMetricsFile(new File(outputDir, "mote_metrics.txt").getPath());
+
+		// Initialize timestepiot to 0. This tracks the run number for QoS retrieval.
+		// The simulator uses 1-indexed run numbers, so run number = timestepiot + 1
+		// After each doSingleRun(), timestepiot is incremented to match the created run
+		iot.DeltaIOTConnector.timestepiot = 0;
+		iot.DeltaIOTConnector.timestep = 0;
+		// Experiment parameters from solver.config (surprise measure, p_c)
+		deltaConnector.setSurpriseMeasureForGamma(surpriseMeasureForGamma);
+		deltaConnector.setP_c(p_c);
+		
+		// test turning a link fully of for full duration of simulation
+		//noiseInjector.setLinkFailureDuration(50);	
+
 		for (int timestep = 0; timestep < numTimesteps; timestep++) {
+			// Set the static timestep variable to current loop timestep for use in MIS calculation
+			iot.DeltaIOTConnector.timestep = timestep;
+			
+			// update failure states if noise injector is enabled
+			if (deltaConnector.getNoiseInjector() != null) {
+				deltaConnector.getNoiseInjector().updateFailures(
+					iot.DeltaIOTConnector.motes, timestep);
+			}
+
+			// set failure for mote 10 at timestep 60
+			/*if (timestep == 100) {
+				noiseInjector.turnLinkOff(7, 3);
+			}*/
+			
 			/*
-			 * MONITOR
+			 * MAPE-K PHASE: MONITOR (timestep-level initialization)
+			 * 
+			 * Initialize the monitoring phase for this timestep by:
+			 * - Retrieving current network state (all motes)
+			 * - Getting the initial POMDP state from previous timestep
+			 * - Preparing for per-mote adaptation loop
+			 * 
+			 * Each mote goes through: Analyse -> Plan -> Execute -> Monitor
+			 * The baseline for each mote is implicitly the previous mote's post-action state
+			 * (or the previous timestep's last post-action state for the first mote).
 			 */
 			JsonObject obj =new JsonObject();
 			obj.put("timestep", timestep+"");
+
 			iot.DeltaIOTConnector.motes = iot.DeltaIOTConnector.networkMgmt.getProbe().getAllMotes();
 			System.out.println("motes recieved");
 
-			int currState = pomdp.getInitialState();
+			// For timestep 0, no runs exist yet, so use default state 0
+			// For timestep > 0, getInitialState() uses timestepiot (last run of previous timestep) for current network state
+			int currState;
+			if (timestep == 0) {
+				// No runs exist yet at timestep 0, use default state
+				currState = 0;
+			} else {
+				currState = pomdp.getInitialState();
+			}
 			System.out.println("Initial state: "+currState);
 			pomdp.setCurrentState(currState);
 			
 			System.out.println("current state: "+ pomdp.getCurrentState());		
 			
+			// Creating random order of motes to perform adaptation 
 			int numMotes = iot.DeltaIOTConnector.motes.size();
 			int[] moteIndexes = new int[numMotes];
 			for (int i = 0; i < numMotes; i++) {
 				moteIndexes[i] = i;
 			}
 			// Fisher–Yates shuffle
-			Random random = new Random();
+			// Use runSeed + timestep for reproducible but varied order per timestep
+			Random random = new Random(runSeed + timestep);
 			for (int i = numMotes - 1; i > 0; i--) {
 			    int j = random.nextInt(i + 1);
 			    int tmp = moteIndexes[i];
 			    moteIndexes[i] = moteIndexes[j];
 			    moteIndexes[j] = tmp;
 			}
+			// End of randomised motes
 			
 			for(int moteIndex : moteIndexes) {
 				Mote m = iot.DeltaIOTConnector.motes.get(moteIndex);
 				System.out.println("\nTime Step: "+timestep);
 				// Simulator object holds the list of motes, gateways, turnOrder, runInfo and qos values.
-				// THis will simulate sending packets through the network to the gateways
+				// This will simulate sending packets through the network to the gateways
 				// Each gateway will aggregate information about packet-loss and power-consumption
 				// The QoS values will be stored in the Simulator object
 				
 				/*
-				 * ANALYSE
+				 * MAPE-K PHASE: MONITOR (implicit via previous mote's post-action state)
+				 * 
+				 * The baseline network state for this mote is implicitly available from the
+				 * previous mote's post-action simulation run. Since we're looping over motes
+				 * sequentially, each mote's "baseline" is the previous mote's "post-action" state.
+				 * This eliminates the need for a separate baseline measurement per mote.
+				 * 
+				 * For the first mote in the loop, the baseline comes from:
+				 * - Previous timestep's last post-action run (if timestep > 0)
+				 * - Or default state 0 (if timestep == 0)
 				 */
-				iot.DeltaIOTConnector.networkMgmt.getSimulator().doSingleRun();
 				
 				iot.DeltaIOTConnector.selectedmote = m;
 				System.out.println("Mote Id"+iot.DeltaIOTConnector.selectedmote.getMoteid());
 				
 				obj.put("Mote Id", iot.DeltaIOTConnector.selectedmote.getMoteid()+"");		
 			
+				/*
+				 * MAPE-K PHASE: ANALYSE
+				 * 
+				 * Compute belief state and satisfaction probabilities. The belief represents our
+				 * uncertainty about which state the system is currently in. The baseline network
+				 * state is implicitly available from the previous mote's post-action simulation run
+				 * (or from the previous timestep for the first mote).
+				 */
 				BeliefPoint initialbelief = pomdp.getInitialBelief(); // b0
-				double b[] = initialbelief.getBelief();
-				System.out.println(b[0]+" "+b[1]+" "+b[2]+" "+b[3]);
-				double mecsatprob = b[0]+b[1]; // Sum of all states in which MEC is satisfied
-				double rplsatprob = b[0]+b[2];
-				pwMECSatProb.println(timestep+" "+mecsatprob);
-				pwRPLSatProb.println(timestep+" "+rplsatprob);
+				double beliefValues[] = initialbelief.getBelief();
+				System.out.println(beliefValues[0]+" "+beliefValues[1]+" "+beliefValues[2]+" "+beliefValues[3]);
+				double mecsatprob = beliefValues[0]+beliefValues[1]; // Sum of all states in which MEC is satisfied
+				double rplsatprob = beliefValues[0]+beliefValues[2];
+				pwMECSatProb.println(moteIndex+" "+timestep+" "+mecsatprob);
+				pwRPLSatProb.println(moteIndex+" "+timestep+" "+rplsatprob);
 				pwMECSatProb.flush();
 				pwRPLSatProb.flush();				
 				
 				/*
-				 * PLANNING
+				 * MAPE-K PHASE: PLAN
+				 * 
+				 * Solve the POMDP to determine the optimal adaptation action given the current
+				 * belief state. Each AlphaVector encodes a linear function over beliefs V(b) = alpha * b.
+				 * The solver computes a value function that represents the expected long-term reward.
 				 */
 				// Each AlphaVector encodes a linear function over beliefs V(b) = alpha * b
 				ArrayList<AlphaVector> V1 = solver.solve(pomdp);
@@ -391,125 +666,276 @@ public class SolvePOMDP {
 					System.out.println("~~~~~~~~~~~~~~~~~~~~~~~");
 					System.out.println("Action labels: "+ V1.get(i).getAction());
 					System.out.println("~~~~~~~~~~~~~~~~~~~~~~~");
-					double expectedvalue=V1.get(i).getDotProduct(pomdp.getInitialBelief().getBelief());
+					double expectedvalue = V1.get(i).getDotProduct(pomdp.getInitialBelief().getBelief());
 					System.out.println("Expected Value: "+ expectedvalue);
-				
 				}
-				// Select the best alpha vector and its action
-				int bestindex = AlphaVector.getBestVectorIndex(pomdp.getInitialBelief().getBelief(), V1);
-				int selectedAction = V1.get(bestindex).getAction();
-				System.out.println("Selected Action: " + selectedAction);
+
+				// Select action using stochastic policy (softmax) based on Q-functions
+				int selectedAction;
+				if (solver instanceof ERPBVI) {
+					// ERPBVI has Q-functions directly available
+					erPolicy = new ERPolicy(pomdp, (ERPBVI)solver, new Random(runSeed));
+					selectedAction = erPolicy.selectAction(pomdp.getInitialBelief());
+				} else if (solver instanceof ERPerseus) {
+					// ERPerseus: extract Q-functions from value function
+					double lambda = ((ERPerseus) solver).getLambda();
+					erPolicy = new ERPolicy(pomdp, V1, lambda, new Random(runSeed));
+					selectedAction = erPolicy.selectAction(pomdp.getInitialBelief());
+				} else {
+					// Fallback for other solvers (deterministic/greedy)
+					int bestIndex = AlphaVector.getBestVectorIndex(pomdp.getInitialBelief().getBelief(), V1);
+					selectedAction = V1.get(bestIndex).getAction();
+					System.out.println("Selected Action (greedy): " + selectedAction);
+				}
 				
-				// Put knowledge update here?
-				// Really, want this function in the deltaiotconnector, as we want it triggered before belief is updated. 
-				// Otherwise, we are comparing the posterior belief rather than the prior
-				
+				System.out.println("Selected Action: " + selectedAction);				
 				
 				pwaction.println(timestep+" "+selectedAction);
 				pwaction.flush();
 				
 				/*
-				 * EXECUTE
+				 * MAPE-K PHASE: EXECUTE
+				 * 
+				 * Step 1: Perform the selected action (DTP or ITP) which modifies network
+				 * configuration (transmission power, spreading factor, link distribution).
+				 * This also updates POMDP beliefs and transition probabilities.
 				 */
 				obj.put("Selected Action: ", selectedAction+"");
 				pomdp.setInitialBelief(initialbelief); // update initial belief for the next step
 				iot.DeltaIOTConnector.p = pomdp;
-				deltaConnector.performAction(selectedAction);
+				// Capture stdout/stderr during performAction to suppress warnings
+				PrintStream originalOut = System.out;
+				PrintStream originalErr = System.err;
+				ByteArrayOutputStream outCapture = new ByteArrayOutputStream();
+				ByteArrayOutputStream errCapture = new ByteArrayOutputStream();
+				PrintStream outStream = new PrintStream(outCapture, true);
+				PrintStream errStream = new PrintStream(errCapture, true);
+				try {
+					System.setOut(outStream);
+					System.setErr(errStream);
+					deltaConnector.performAction(selectedAction);
+				} finally {
+					System.setOut(originalOut);
+					System.setErr(originalErr);
+				}
 				pomdp = iot.DeltaIOTConnector.p; // as POMDP is being updated in performAction, must adjust the variable `pomdp` here
 			 
 				System.out.println("Current State: " + pomdp.getCurrentState());
-				// timestepiot is acting as an index for retrieving QoS for each mote
-			 	ArrayList<QoS> result = DeltaIOTConnector.networkMgmt.getNetworkQoS(iot.DeltaIOTConnector.timestepiot+1); 
-			 	System.out.println("QOS list size: "+result.size());
 				
+				/*
+				 * MAPE-K PHASE: MONITOR (post-execution measurement)
+				 * 
+				 * Monitor the network state after the action has been executed by running a simulation.
+				 * This doSingleRun() call simulates packet flow through the network to measure the
+				 * actual effects of the adaptation action.
+				 * 
+				 * What this monitoring phase does:
+				 * - Runs network simulation (doSingleRun()) to observe packet flow and network behavior
+				 * - Measures QoS metrics (packet loss, energy consumption) that reflect the action's impact
+				 * - Creates data that serves as the baseline for the next mote in the loop
+				 * - Enables sequential adaptation where each mote sees effects of previous motes
+				 * 
+				 * Why we need this simulation AFTER execution:
+				 * - Actions modify network settings (power, distribution, etc.)
+				 * - We need to observe/measure whether the adaptation achieved desired outcomes
+				 * - This feedback loop enables learning and adaptive behavior
+				 * 
+				 * Expected: 1 run per mote per timestep (post-action measurement only)
+				 * Each mote's baseline is the previous mote's post-action state.
+				 */
+				// It is best to increment timestepiot *after* doSingleRun(), because doSingleRun() actually creates the new run in the simulator,
+				// and only after that does the run count (timestepiot) reflect the latest run that contains the effect of the action.
+				// Capture stdout/stderr during doSingleRun to detect and suppress warnings
+				// Keep streams redirected during doSingleRun() and the waiting period to prevent warnings from appearing in console
+				PrintStream originalOut2 = System.out;
+				PrintStream originalErr2 = System.err;
+				ByteArrayOutputStream outCapture2 = new ByteArrayOutputStream();
+				ByteArrayOutputStream errCapture2 = new ByteArrayOutputStream();
+				PrintStream outStream2 = new PrintStream(outCapture2, true);
+				PrintStream errStream2 = new PrintStream(errCapture2, true);
+				try {
+					// Redirect streams BEFORE doSingleRun() to suppress warnings from appearing in console
+					System.setOut(outStream2);
+					System.setErr(errStream2);
+					iot.DeltaIOTConnector.networkMgmt.getSimulator().doSingleRun();
+					// Now the simulator has completed the next run. Increment timestepiot so it matches the latest run index.
+					iot.DeltaIOTConnector.timestepiot++;
+				} finally {
+					// Restore original streams after doSingleRun() completes
+					// Note: QoSDataHelper.waitForQoSDataReady() below handles validation and waiting
+					System.setOut(originalOut2);
+					System.setErr(originalErr2);
+				}
+				// The currentRun variable now points exactly to the run we just simulated.
+				// Note: getNetworkQoS() expects 1-indexed run numbers (1, 2, 3, ...)
+				int currentRun = iot.DeltaIOTConnector.timestepiot;
+				
+				// Validate run number is reasonable (should not exceed expected number of runs)
+				// Expected: 1 run per mote per timestep (post-action measurement only)
+				// Each mote's baseline is implicitly the previous mote's post-action state
+				int expectedMaxRuns = (timestep + 1) * numMotes;
+				if (currentRun > expectedMaxRuns) {
+					System.err.println("Warning: Run number " + currentRun + " exceeds expected maximum " + expectedMaxRuns);
+					System.err.println("Timestep: " + timestep + ", Mote: " + moteIndex + ", timestepiot: " + iot.DeltaIOTConnector.timestepiot);
+				}
+				
+				// Wait for QoS data to be ready before accessing it to prevent warnings
+				// This ensures the simulator has completed data aggregation for all motes
+				System.out.println("Waiting for QoS data ready...");
+				ArrayList<QoS> result = QoSDataHelper.waitForQoSDataReady(currentRun, 50, 300);
+				if (result == null || result.isEmpty()) {
+					System.err.println("Warning: No QoS data available for run " + currentRun + ". Using defaults.");
+					System.err.println("Timestep: " + timestep + ", Mote: " + moteIndex + ", timestepiot: " + iot.DeltaIOTConnector.timestepiot);
+					result = new ArrayList<QoS>();
+					System.err.println("Continuing with default QoS values for this mote iteration");
+				}
+				if (result != null && !result.isEmpty()) {
+					System.out.println("QOS list size: "+result.size());
+				}
+				
+				// Extract and log QoS metrics from the post-action simulation run.
+				// These metrics represent the network state AFTER the adaptation action.
+				// This state will serve as the baseline for the next mote in the loop
+				// (or for the next timestep if this is the last mote).
+				// 
+				// This completes the MAPE-K cycle for this mote:
+				// 1. MONITOR (implicit via previous mote) -> 2. ANALYSE -> 3. PLAN -> 4. EXECUTE -> 5. MONITOR (results)
+			 	// Validate that we have QoS data before accessing it
+			 	double packetLoss = 0.0;
+			 	double energyConsumption = 0.0;
+			 	if (result != null && !result.isEmpty()) {
+			 		packetLoss = result.get(result.size()-1).getPacketLoss();
+			 		energyConsumption = result.get(result.size()-1).getEnergyConsumption();
+			 	} else {
+			 		System.err.println("Warning: Using default QoS values (packetLoss=0.0, energyConsumption=0.0)");
+			 	}
+			 	// Reduced logging frequency - only log every 50 timesteps to reduce console spam
+			 	if (timestep % 50 == 0) {
+			 		System.out.println("packet loss: "+packetLoss+"   Energy Consumption: "+energyConsumption);
+			 	}
 			 	
-			 	/*
-			 	 * MONITOR
-			 	 */
-			 	double packetLoss = result.get(result.size()-1).getPacketLoss();
-			 	double energyConsumption = result.get(result.size()-1).getEnergyConsumption();
-			 	// Get calculating entropy of current mote's transition belief given previous action and state movement
-			 	double entropy = deltaConnector.getMoteEntropy();
-			 	double mutualInformation = deltaConnector.getMoteMI();
-			 	entropies[timestep] += entropy;
-			 	mutualInformations[timestep] += mutualInformation;
-			 	System.out.println("packet loss: "+packetLoss+"   Energy Consumption: "+energyConsumption+"   Entropy: "+entropy+"   Mutual Information: "+mutualInformation);
-			 	
-			 	pwMECSat.println(timestep+" "+energyConsumption);
-			 	pwRPLSat.println(timestep+" "+packetLoss);
+			 	pwMECSat.println(moteIndex+" "+timestep+" "+energyConsumption);
+			 	pwRPLSat.println(moteIndex+" "+timestep+" "+packetLoss);
 			 	pwMECSat.flush();
 			 	pwRPLSat.flush();
 			 	
 			 	obj.put("packet loss", packetLoss+"");
 			 	obj.put("Energy Consumption",energyConsumption+"");
-			 	iot.DeltaIOTConnector.timestepiot++;		
+			 	// Note: timestepiot was already incremented above after doSingleRun()
 			 	rlist.add(obj);
 			 	
 			}///End of Motes loop
 			
+			// Log comprehensive metrics for all motes at this timestep
+			// This captures the network state AFTER all actions have been performed
+			// Actions (performDTP/performITP) already enforce distribution=0 for failed links,
+			// so the logged metrics will accurately reflect the enforced state
+			iot.DeltaIOTConnector.motes = iot.DeltaIOTConnector.networkMgmt.getProbe().getAllMotes();
+			for (Mote mote : iot.DeltaIOTConnector.motes) {
+				deltaConnector.logMoteAndLinkMetrics(mote, timestep);
+			}
+			
 			String plstimestep = "";
 			String ecstimestep = "";
+			
+			// QoS (Quality of Service) contains 
+			// (1) the time when the last period finished 
+			// (2) the packet loss of the network
+			// (3) Energy consumption of the network
 			ArrayList<QoS> result1 = (ArrayList<QoS>)DeltaIOTConnector.networkMgmt.getSimulator().getQosValues();
 			
+			// Validate that we have QoS data before accessing it
+			if (result1 == null || result1.isEmpty()) {
+				System.err.println("Warning: getQosValues() returned empty or null at timestep " + timestep);
+				System.err.println("Skipping timestep-level file write for timestep " + timestep);
+				continue; // Skip this timestep's file write
+			}
+			
 			// Total packet loss and energy consumption across every mote in the network
-			double pl1=result1.get(result1.size()-1).getPacketLoss();
-			double ec1=result1.get(result1.size()-1).getEnergyConsumption();
+			// Use the last entry in the QoS list, which represents the most recent network-wide QoS
+			int lastIndex = result1.size() - 1;
+			QoS lastQoS = result1.get(lastIndex);
+			
+			if (lastQoS == null) {
+				System.err.println("Warning: Last QoS entry is null at timestep " + timestep);
+				System.err.println("QoS list size: " + result1.size());
+				continue; // Skip this timestep's file write
+			}
+			
+			double pl1 = lastQoS.getPacketLoss();
+			double ec1 = lastQoS.getEnergyConsumption();
+			
 			plstimestep = timestep+" ";
 			ecstimestep = timestep+" ";
 			plstimestep = plstimestep+pl1;
 			ecstimestep = ecstimestep+ec1;
 			
-			System.out.println("packet loss: "+plstimestep+"energy consumption"+ecstimestep);
+			// Reduced logging frequency - only log every 50 timesteps to reduce console spam
+			if (timestep % 50 == 0) {
+				System.out.println("packet loss: "+plstimestep+"energy consumption"+ecstimestep);
+			}
+			
+			// Write to timestep-level files
 			pwMECSattimestep.println(ecstimestep);
 			pwRPLSattimestep.println(plstimestep);
 			pwMECSattimestep.flush();
 			pwRPLSattimestep.flush();
 			
-			// Writing entropy values to file
-			try (BufferedWriter writer = new BufferedWriter(new FileWriter("entropy.txt"))) {
-				for (int i = 0; i < entropies.length; i++) {
-					writer.write(Integer.toString(i)+" "+Double.toString(entropies[i]));
-					writer.newLine();
-				}
-			}
-			try (BufferedWriter writer = new BufferedWriter(new FileWriter("mutualInformation.txt"))) {
-				for (int i = 0; i < mutualInformations.length; i++) {
-					writer.write(Integer.toString(i)+" "+Double.toString(mutualInformations[i]));
-					writer.newLine();
-				}
-			}
+			// Stats check for failed components
+			System.out.println(noiseInjector.getFailureStats());
 		}
 		
-		////////////////////////////////
-		
-		
-		pwMECSat.close();
-		pwRPLSat.close();
-		pwaction.close();
-		fwaction.close();
-		fwMECSat.close();
-		fwRPLSat.close();	
-		pwMECSattimestep.close();
-		pwRPLSattimestep.close();
-		pwMECSatProb.close();
-		pwRPLSatProb.close();
-		fwMECSatProb.close();
-		fwRPLSatProb.close();
-		
 		// print results
-		String outputFilePG = sp.getOutputDir()+"/"+pomdp.getInstanceName()+".pg";
-		String outputFileAlpha = sp.getOutputDir()+"/"+pomdp.getInstanceName()+".alpha";
+		String outputFilePG = new File(outputDir, pomdp.getInstanceName() + ".pg").getAbsolutePath();
+		String outputFileAlpha = new File(outputDir, pomdp.getInstanceName() + ".alpha").getAbsolutePath();
 		System.out.println();
 		System.out.println("=== RESULTS ===");
 		System.out.println("Expected value: "+solver.getExpectedValue());
 		System.out.println("Alpha vectors: "+outputFileAlpha);
 		if(sp.dumpPolicyGraph()) System.out.println("Policy graph: "+outputFilePG);
 		System.out.println("Running time: "+solver.getTotalSolveTime()+" sec");
-		
 		}
 		catch(IOException ioex)
 		{
+			System.err.println("IOException caught in runCaseIoT:");
 			ioex.printStackTrace();
+		}
+		catch(Exception ex)
+		{
+			System.err.println("Unexpected exception caught in runCaseIoT:");
+			ex.printStackTrace();
+		}
+		finally
+		{
+			// Ensure all resources are closed even if an exception occurs
+			closeResource(pwMECSatProb);
+			closeResource(pwRPLSatProb);
+			closeResource(pwMECSat);
+			closeResource(pwRPLSat);
+			closeResource(pwaction);
+			closeResource(pwMECSattimestep);
+			closeResource(pwRPLSattimestep);
+			closeResource(fwMECSatProb);
+			closeResource(fwRPLSatProb);
+			closeResource(fwMECSat);
+			closeResource(fwRPLSat);
+			closeResource(fwaction);
+			closeResource(fwMECSattimestep);
+			closeResource(fwRPLSattimestep);
+		}
+	}
+	
+	/**
+	 * Helper method to safely close resources
+	 */
+	private void closeResource(java.io.Closeable resource) {
+		if (resource != null) {
+			try {
+				resource.close();
+			} catch (IOException e) {
+				// Log but don't throw - we're in cleanup
+				System.err.println("Warning: Error closing resource: " + e.getMessage());
+			}
 		}
 	}
 	
@@ -518,6 +944,8 @@ public class SolvePOMDP {
 	 * @param args first argument should be a filename of a .POMDP file
 	 */
 	public static void main(String[] args) {	
+		long startTime = System.currentTimeMillis();
+		
 		System.out.println("SolvePOMDP v0.0.3");
 		System.out.println("Author: Erwin Walraven");
 		System.out.println("Web: erwinwalraven.nl/solvepomdp");
@@ -531,28 +959,20 @@ public class SolvePOMDP {
 		
 		SolvePOMDP ps = new SolvePOMDP();
 		ps.run("IoT.POMDP");
-		ps.close();
 
-		// Graph output		
-		LineChart linechart_MEC = new LineChart("MECSattimestep.txt", "MEC Satisfaction", "MEC over time");
-		LineChart linechart_RPL = new LineChart("RPLSattimestep.txt", "RPL Satisfaction", "RPL over time");
-		LineChart linechart_entropy = new LineChart("entropy.txt", "Transition entropy", "Entropy over time");
-		LineChart linechart_MI = new LineChart("mutualInformation.txt", "Transition MI", "MI over time");
-		linechart_MEC.pack();
-		linechart_RPL.pack();
-		linechart_entropy.pack();
-		linechart_MI.pack();
-		
-		String[] filenames = {"MECSattimestep.txt", "RPLSattimestep.txt"};
-		
-		BoxWhiskerChart bw_MEC = new BoxWhiskerChart(filenames, "MEC Satisfaction", "MEC over time");
-		//BoxWhiskerChart bw_MEC = new BoxWhiskerChart("MECSattimestep.txt", "MEC Satisfaction", "MEC over time");
-		bw_MEC.pack();
-		
-		linechart_MEC.setVisible(true);
-		linechart_RPL.setVisible(true);
-		linechart_entropy.setVisible(true);
-		linechart_MI.setVisible(true);
-		bw_MEC.setVisible(true);
+		long endTime = System.currentTimeMillis();
+		long totalTime = endTime - startTime;
+		double totalTimeSeconds = totalTime / 1000.0;
+		System.out.println();
+		System.out.println("========================================");
+		System.out.println("Total execution time: " + String.format("%.2f", totalTimeSeconds) + " seconds");
+		System.out.println("========================================");
+
+		try {
+			runPython();
+		} catch (Exception e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
 	}
 }

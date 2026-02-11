@@ -32,6 +32,15 @@ public class SolverProperties {
 	private double timeLimit;                   // time limit in seconds
 	private int beliefSamplingRuns;             // belief sampling runs
 	private int beliefSamplingSteps;            // belief sampling steps
+	private double lambda;                      // entropy regularization parameter
+	
+	public double getLambda() {
+		return lambda;
+	}
+	
+	public void setLambda(double lambda) {
+		this.lambda = lambda;
+	}
 	
 	public int getFixedStages() {
 		return fixedStages;
