@@ -87,6 +87,9 @@ public class DeltaIOTConnector {
 	// Probability of change (volatility): in (0, 1); controls m = p_c/(1-p_c) in varSMiLE gamma formula. Configurable for experiments.
 	private double p_c = 0.5;
 	
+	// If true, use varSMiLE (surprise-weighted) transition belief updates; if false, use classic Bayesian (Dirichlet +1 only).
+	private boolean useSurpriseUpdating = true;
+	
 	// Output directory for file operations
 	private String outputDirectory = "L4Project/output_dir"; // Default, will be set by SolvePOMDP
 	
@@ -120,6 +123,11 @@ public class DeltaIOTConnector {
 	
 	public double getP_c() {
 		return this.p_c;
+	}
+	
+	/** Set whether to use surprise-based (varSMiLE) or classic Bayesian transition belief updates. */
+	public void setUseSurpriseUpdating(boolean useSurpriseUpdating) {
+		this.useSurpriseUpdating = useSurpriseUpdating;
 	}
 	
 	public DeltaIOTConnector() {
@@ -574,6 +582,16 @@ public class DeltaIOTConnector {
 			// Add a small offset to prevent log(0) when MIS is exactly 0, but scale it so small MIS values still produce reasonable gamma
 			double scaledMIS = Math.max(this.eps, absMIS);
 			logSurprise = Math.log(scaledMIS);
+		}
+
+		// Classic Bayesian: use updated pseudo-counts only (no surprise, no gamma blend)
+		if (!useSurpriseUpdating) {
+			p.transitionBeliefCurr = transitionBeliefCurrTemp;
+			appendToFile(new File(outputDirectory, "surpriseBF.txt").getPath(), Math.exp(logSurpriseBF), DeltaIOTConnector.selectedmote.getMoteid(), DeltaIOTConnector.timestep);
+			appendToFile(new File(outputDirectory, "gamma.txt").getPath(), 0, DeltaIOTConnector.selectedmote.getMoteid(), DeltaIOTConnector.timestep);
+			appendToFile(new File(outputDirectory, "surpriseCC.txt").getPath(), Math.exp(logSurpriseCC), DeltaIOTConnector.selectedmote.getMoteid(), DeltaIOTConnector.timestep);
+			appendToFile(new File(outputDirectory, "surpriseMIS.txt").getPath(), currentMIS, DeltaIOTConnector.selectedmote.getMoteid(), DeltaIOTConnector.timestep);	
+			return;
 		}
 
 		// Predefined rate m dictates how much model changes

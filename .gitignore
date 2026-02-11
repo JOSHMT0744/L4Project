@@ -1,6 +1,9 @@
 <<<<<<< HEAD
+<<<<<<< HEAD
 /bin/
 =======
+=======
+>>>>>>> noiseInjector
 # Eclipse IDE
 .settings/
 .project
@@ -64,6 +67,7 @@ L4Project/output_dir/*
 !docs/MIS_pseudocode.md
 !docs/Report-Introduction-RelatedWork-Plan.md
 !docs/Surprise-Based-Learning-DeltaIoT.md
+!docs/Results-Section-Plan.md
 
 # Logs
 *.log
@@ -74,4 +78,7 @@ logs/
 *.temp
 *~
 .cache/
+<<<<<<< HEAD
 >>>>>>> cc7dc8e4cf87526637ef4bd814f36655c95d5516
+=======
+>>>>>>> noiseInjector
