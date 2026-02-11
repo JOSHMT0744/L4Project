@@ -558,12 +558,6 @@ public class DeltaIOTConnector {
 			transitionBeliefResetTemp[stateIndex][action][nextstate] += 1.0;
 		}
 
-		// Classic Bayesian: use updated pseudo-counts only (no surprise, no gamma blend)
-		if (!useSurpriseUpdating) {
-			p.transitionBeliefCurr = transitionBeliefCurrTemp;
-			return;
-		}
-
 		// Select which surprise measure to use for gamma calculation
 		// Options: "CC" (Confidence-Corrected Surprise - default), "BF" (Bayes Factor Surprise), or "MIS" (Mutual Information Surprise)
 		// To change, call setSurpriseMeasureForGamma(measure) before running
@@ -588,6 +582,16 @@ public class DeltaIOTConnector {
 			// Add a small offset to prevent log(0) when MIS is exactly 0, but scale it so small MIS values still produce reasonable gamma
 			double scaledMIS = Math.max(this.eps, absMIS);
 			logSurprise = Math.log(scaledMIS);
+		}
+
+		// Classic Bayesian: use updated pseudo-counts only (no surprise, no gamma blend)
+		if (!useSurpriseUpdating) {
+			p.transitionBeliefCurr = transitionBeliefCurrTemp;
+			appendToFile(new File(outputDirectory, "surpriseBF.txt").getPath(), Math.exp(logSurpriseBF), DeltaIOTConnector.selectedmote.getMoteid(), DeltaIOTConnector.timestep);
+			appendToFile(new File(outputDirectory, "gamma.txt").getPath(), 0, DeltaIOTConnector.selectedmote.getMoteid(), DeltaIOTConnector.timestep);
+			appendToFile(new File(outputDirectory, "surpriseCC.txt").getPath(), Math.exp(logSurpriseCC), DeltaIOTConnector.selectedmote.getMoteid(), DeltaIOTConnector.timestep);
+			appendToFile(new File(outputDirectory, "surpriseMIS.txt").getPath(), currentMIS, DeltaIOTConnector.selectedmote.getMoteid(), DeltaIOTConnector.timestep);	
+			return;
 		}
 
 		// Predefined rate m dictates how much model changes

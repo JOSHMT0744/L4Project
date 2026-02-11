@@ -71,6 +71,11 @@ public class SolvePOMDP {
 	private String surpriseMeasureForGamma = "MIS";
 	private double p_c = 0.5;
 	private boolean useSurpriseUpdating = true;
+
+	/** Optional link failure injection (from solver.config): timestep and link list to turn off; optional recovery timestep to turn them back on. -1 means disabled. */
+	private int linkFailureTimestep = -1;
+	private List<int[]> linkFailureLinksList = null;
+	private int linkRecoveryTimestep = -1;
 	
 	/**
 	 * Find Python executable in virtual environment
@@ -296,6 +301,29 @@ public class SolvePOMDP {
 			throw new RuntimeException("useSurpriseUpdating must be true or false; got '" + useSurpriseUpdatingStr + "'");
 		}
 		this.useSurpriseUpdating = useSurpriseUpdatingStr.equals("true");
+
+		// Optional link failure injection
+		String linkFailureTimestepStr = getProperty(properties, "linkFailureTimestep", "");
+		if (linkFailureTimestepStr != null && !linkFailureTimestepStr.trim().isEmpty()) {
+			this.linkFailureTimestep = Integer.parseInt(linkFailureTimestepStr.trim());
+			String linkFailureLinksStr = getProperty(properties, "linkFailureLinks", "");
+			if (linkFailureLinksStr != null && !linkFailureLinksStr.trim().isEmpty()) {
+				this.linkFailureLinksList = new ArrayList<>();
+				for (String pair : linkFailureLinksStr.split(",")) {
+					String[] parts = pair.trim().split("-");
+					if (parts.length == 2) {
+						this.linkFailureLinksList.add(new int[] {
+							Integer.parseInt(parts[0].trim()),
+							Integer.parseInt(parts[1].trim())
+						});
+					}
+				}
+			}
+			String linkRecoveryTimestepStr = getProperty(properties, "linkRecoveryTimestep", "");
+			if (linkRecoveryTimestepStr != null && !linkRecoveryTimestepStr.trim().isEmpty()) {
+				this.linkRecoveryTimestep = Integer.parseInt(linkRecoveryTimestepStr.trim());
+			}
+		}
 
 		// Error checking solver.config parameters
 		if(!algorithmType.equals("perseus") && !algorithmType.equals("gip") && !algorithmType.equals("erpbvi") && !algorithmType.equals("erperseus")) {
@@ -547,7 +575,7 @@ public class SolvePOMDP {
 		deltaConnector.setUseSurpriseUpdating(useSurpriseUpdating);
 		
 		// test turning a link fully of for full duration of simulation
-		//noiseInjector.setLinkFailureDuration(50);	
+		noiseInjector.setLinkFailureDuration(400);	
 
 		for (int timestep = 0; timestep < numTimesteps; timestep++) {
 			// Set the static timestep variable to current loop timestep for use in MIS calculation
@@ -559,10 +587,19 @@ public class SolvePOMDP {
 					iot.DeltaIOTConnector.motes, timestep);
 			}
 
-			// set failure for mote 10 at timestep 60
-			/*if (timestep == 100) {
-				noiseInjector.turnLinkOff(7, 3);
-			}*/
+			// Config-driven link failure: at linkFailureTimestep turn off configured links; at linkRecoveryTimestep turn them back on
+			if (noiseInjector != null && linkFailureTimestep >= 0 && linkFailureLinksList != null && !linkFailureLinksList.isEmpty()) {
+				if (timestep == linkFailureTimestep) {
+					for (int[] link : linkFailureLinksList) {
+						noiseInjector.turnLinkOff(link[0], link[1]);
+					}
+				}
+				if (linkRecoveryTimestep >= 0 && timestep == linkRecoveryTimestep) {
+					for (int[] link : linkFailureLinksList) {
+						noiseInjector.turnLinkOn(link[0], link[1]);
+					}
+				}
+			}
 			
 			/*
 			 * MAPE-K PHASE: MONITOR (timestep-level initialization)
