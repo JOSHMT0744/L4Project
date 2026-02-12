@@ -66,11 +66,12 @@ public class SolvePOMDP {
 	private String domainDirName;    // name of the directory containing .POMDP files
 	private String domainDir;        // full path of the domain directory
 	
-	/** Optional experiment parameters (from solver.config): run seed, surprise measure, p_c, useSurpriseUpdating. Used for reproducible runs and paper experiments. */
+	/** Optional experiment parameters (from solver.config): run seed, surprise measure, p_c, useSurpriseUpdating, lookback. Used for reproducible runs and paper experiments. */
 	private int runSeed = 222;
 	private String surpriseMeasureForGamma = "MIS";
 	private double p_c = 0.5;
 	private boolean useSurpriseUpdating = true;
+	private int lookback = 5;
 
 	/** Optional link failure injection (from solver.config): timestep and link list to turn off; optional recovery timestep to turn them back on. -1 means disabled. */
 	private int linkFailureTimestep = -1;
@@ -301,6 +302,10 @@ public class SolvePOMDP {
 			throw new RuntimeException("useSurpriseUpdating must be true or false; got '" + useSurpriseUpdatingStr + "'");
 		}
 		this.useSurpriseUpdating = useSurpriseUpdatingStr.equals("true");
+		this.lookback = Integer.parseInt(getProperty(properties, "lookback", "5"));
+		if (this.lookback <= 0) {
+			throw new RuntimeException("lookback must be > 0; got " + this.lookback);
+		}
 
 		// Optional link failure injection
 		String linkFailureTimestepStr = getProperty(properties, "linkFailureTimestep", "");
@@ -356,7 +361,7 @@ public class SolvePOMDP {
 		System.out.println("Dump policy graph: "+sp.dumpPolicyGraph());
 		System.out.println("Dump action labels: "+sp.dumpActionLabels());
 		System.out.println("Lambda: "+sp.getLambda());
-		System.out.println("Run seed: "+runSeed+", Surprise measure: "+surpriseMeasureForGamma+", p_c: "+p_c+", useSurpriseUpdating: "+useSurpriseUpdating);
+		System.out.println("Run seed: "+runSeed+", Surprise measure: "+surpriseMeasureForGamma+", p_c: "+p_c+", useSurpriseUpdating: "+useSurpriseUpdating+", lookback: "+lookback);
 		
 		// load required POMDP algorithm (use runSeed for reproducible experiments)
 		switch (algorithmType) {
@@ -569,10 +574,11 @@ public class SolvePOMDP {
 		// After each doSingleRun(), timestepiot is incremented to match the created run
 		iot.DeltaIOTConnector.timestepiot = 0;
 		iot.DeltaIOTConnector.timestep = 0;
-		// Experiment parameters from solver.config (surprise measure, p_c, useSurpriseUpdating)
+		// Experiment parameters from solver.config (surprise measure, p_c, useSurpriseUpdating, lookback)
 		deltaConnector.setSurpriseMeasureForGamma(surpriseMeasureForGamma);
 		deltaConnector.setP_c(p_c);
 		deltaConnector.setUseSurpriseUpdating(useSurpriseUpdating);
+		deltaConnector.setLookback(lookback);
 		
 		// test turning a link fully of for full duration of simulation
 		noiseInjector.setLinkFailureDuration(400);	

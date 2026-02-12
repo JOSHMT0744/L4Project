@@ -82,18 +82,65 @@ java -cp "bin;libraries/*" main.SolvePOMDP
 
 ## Configuration (`src/solver.config`)
 
-| Setting | Role |
-|--------|------|
-| `algorithmType` | `erperseus`, `perseus`, `erpbvi`, `faserpbvi` |
-| `lambda` | ER temperature (e.g. 0.5–1.0 for ERPerseus); only used by ER solvers |
-| `outputDirectory` | Default `output_dir` |
-| `domainDirectory` | Default `domains` |
-| `beliefSamplingRuns`, `beliefSamplingSteps` | Belief set size for approximate solvers |
-| `valueFunctionTolerance`, `timeLimit` | Stopping conditions |
-| **Experiment (optional)** | |
-| `surpriseMeasureForGamma` | `CC`, `BF`, or `MIS` (default `MIS`) |
-| `p_c` | Probability of change in (0,1) for varSMiLE γ (default `0.5`) |
-| `runSeed` | Base random seed for reproducibility (default `222`; use different values for repeated runs) |
+All hyperparameters are configured in `src/solver.config`. The following parameters are available:
+
+### General Settings
+
+| Setting | Role | Default |
+|--------|------|---------|
+| `algorithmType` | Solver algorithm: `erperseus`, `perseus`, `erpbvi`, `faserpbvi` | `erperseus` |
+| `lambda` | Entropy regularization temperature (e.g. 0.5–1.0 for ERPerseus); only used by ER solvers | `1.0` |
+| `outputDirectory` | Directory for output files | `output_dir` |
+| `domainDirectory` | Directory containing `.POMDP` files | `domains` |
+| `valueFunctionTolerance` | Convergence threshold (algorithm stops when value difference < tolerance) | `0.000001` |
+| `timeLimit` | Maximum runtime in seconds | `1000` |
+
+### Approximate Algorithm Settings
+
+| Setting | Role | Default |
+|--------|------|---------|
+| `beliefSamplingRuns` | Number of belief sampling runs for approximate solvers | `10` |
+| `beliefSamplingSteps` | Number of steps per belief sampling run | `200` |
+
+### Exact Algorithm Settings
+
+| Setting | Role | Default |
+|--------|------|---------|
+| `lpsolver` | LP solver: `gurobi`, `joptimizer`, `lpsolve` | `lpsolve` |
+| `pruningMethod` | POMDP pruning: `standard`, `accelerated` | `accelerated` |
+| `epsilon` | Minimum value improvement to add vectors | `0.000001` |
+| `acceleratedLPThreshold` | Use accelerated LP when vector count exceeds this | `200` |
+| `acceleratedTolerance` | Convergence threshold for accelerated LP | `0.0001` |
+| `coefficientThreshold` | Discard LP coefficients below this (numerical stability) | `0.000000001` |
+
+### Experiment Parameters (Optional)
+
+These hyperparameters control the learning and adaptation behavior:
+
+| Setting | Role | Default |
+|--------|------|---------|
+| `runSeed` | Base random seed for solver, mote order, and policy (vary for repeated runs, e.g. 222, 223, ...) | `222` |
+| `surpriseMeasureForGamma` | Surprise measure for varSMiLE gamma: `CC` (Confidence-Corrected), `BF` (Bayes Factor), or `MIS` (Mutual Information Surprise) | `MIS` |
+| `p_c` | Probability of change in (0,1) for varSMiLE gamma; controls `m = p_c/(1-p_c)` | `0.5` |
+| `useSurpriseUpdating` | `true` = varSMiLE (surprise-weighted) updates; `false` = classic Bayesian (Dirichlet +1 only) | `true` |
+| `lookback` | Lookback period (m) for MIS calculation. Number of timesteps to look back when computing `MIS = MI[current] - MI[current - lookback]` | `4` |
+
+### Link Failure Injection (Optional)
+
+| Setting | Role | Default |
+|--------|------|---------|
+| `linkFailureTimestep` | Timestep at which to turn off listed links (omit or leave empty to disable) | - |
+| `linkFailureLinks` | Comma-separated list of source-dest link IDs, e.g. `12-7, 12-3` | - |
+| `linkRecoveryTimestep` | Timestep at which to turn the same links back on (omit or leave empty for no recovery) | - |
+
+### Output Files
+
+| Setting | Role | Default |
+|--------|------|---------|
+| `dumpPolicyGraph` | Dump policy graph after convergence (only for exact method) | `false` |
+| `dumpActionLabels` | Use action labels instead of numbers in output files | `true` |
+
+**Note:** All hyperparameters that were previously hardcoded in the Java source code have been moved to `solver.config` for easier experimentation and reproducibility. Modify `solver.config` before running to change any of these parameters.
 
 ## Main Output Files
 

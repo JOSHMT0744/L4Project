@@ -1,4 +1,5 @@
 from functools import reduce
+import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
@@ -95,27 +96,60 @@ def satisfactionPlots(df):
     return fig
 
 def surpriseChart(df):
-    fig = go.Figure(
-        data=go.Scatter(
-            x=df["timestep"],
-            y=df["surprisebf"],
-            mode="lines",
-            name="Mean Bayes Factor Surprise",
-        )
-    )
-
+    # Apply moving average smoothing to all three surprise series
+    s_bf_smooth = smooth_series(df["surprisebf"], SMOOTHING_WINDOW)
+    s_cc_smooth = smooth_series(df["surprisecc"], SMOOTHING_WINDOW)
+    s_mis_smooth = smooth_series(df["surprisemis"], SMOOTHING_WINDOW)
+    
+    fig = go.Figure()
+    
+    # Add unsmoothed traces (lighter, thinner lines)
+    fig.add_trace(go.Scatter(
+        x=df["timestep"],
+        y=df["surprisebf"],
+        mode="lines",
+        name="Mean Bayes Factor Surprise",
+        line=dict(width=1),
+        opacity=0.5,
+    ))
     fig.add_trace(go.Scatter(
         x=df["timestep"],
         y=df["surprisecc"],
         mode="lines",
         name="Mean Confidence-Corrected Surprise",
+        line=dict(width=1),
+        opacity=0.5,
     ))
-
     fig.add_trace(go.Scatter(
         x=df["timestep"],
         y=df["surprisemis"],
         mode="lines",
         name="Mean MIS",
+        line=dict(width=1),
+        opacity=0.5,
+    ))
+    
+    # Add smoothed traces (thicker, solid lines)
+    fig.add_trace(go.Scatter(
+        x=df["timestep"],
+        y=s_bf_smooth,
+        mode="lines",
+        name="Mean Bayes Factor Surprise (Smoothed)",
+        line=dict(width=2),
+    ))
+    fig.add_trace(go.Scatter(
+        x=df["timestep"],
+        y=s_cc_smooth,
+        mode="lines",
+        name="Mean Confidence-Corrected Surprise (Smoothed)",
+        line=dict(width=2),
+    ))
+    fig.add_trace(go.Scatter(
+        x=df["timestep"],
+        y=s_mis_smooth,
+        mode="lines",
+        name="Mean MIS (Smoothed)",
+        line=dict(width=2),
     ))
 
     fig.update_layout(
@@ -123,6 +157,110 @@ def surpriseChart(df):
         xaxis_title="Timestep",
         yaxis_title="Mean Surprise",
         legend_title="Surprise Types",
+    )
+    return fig
+
+# Skip this many initial surprise rows so MIS cold-start (first 2*lookback) does not skew normalisation
+MIS_WARMUP_ROWS = 2 * 5  # 2 * lookback (Java default lookback=5)
+
+# Window size for moving average smoothing
+SMOOTHING_WINDOW = 5  # Window size for moving average smoothing
+
+def smooth_series(series, window_size):
+    """Apply centered moving average smoothing to a pandas Series.
+    
+    Args:
+        series: pandas Series to smooth
+        window_size: Size of the moving average window
+        
+    Returns:
+        Smoothed pandas Series with same index. Returns original series if length < window_size.
+    """
+    if len(series) < window_size:
+        return series
+    return series.rolling(window=window_size, center=True).mean()
+
+def surpriseChartNormalized(df):
+    """Surprise measures standardised (z-score) for comparison: each has mean 0 and std 1.
+    Skips the first 2*lookback rows so MIS cold-start does not skew the standardisation."""
+    df = df.iloc[MIS_WARMUP_ROWS:].reset_index(drop=True)
+    if df.empty:
+        return go.Figure()
+    s_bf = df["surprisebf"]
+    s_cc = df["surprisecc"]
+    s_mis = df["surprisemis"]
+
+    def zscore(series):
+        mu, sigma = series.mean(), series.std()
+        if sigma == 0 or np.isnan(sigma):
+            return pd.Series(0.0, index=series.index)
+        return (series - mu) / sigma
+
+    std_bf = zscore(s_bf)
+    std_cc = zscore(s_cc)
+    std_mis = zscore(s_mis)
+
+    # Apply moving average smoothing to standardized values
+    std_bf_smooth = smooth_series(std_bf, SMOOTHING_WINDOW)
+    std_cc_smooth = smooth_series(std_cc, SMOOTHING_WINDOW)
+    std_mis_smooth = smooth_series(std_mis, SMOOTHING_WINDOW)
+
+    fig = go.Figure()
+    
+    # Add unsmoothed standardized traces (lighter, thinner lines)
+    fig.add_trace(go.Scatter(
+        x=df["timestep"],
+        y=std_bf,
+        mode="lines",
+        name="Mean Bayes Factor Surprise",
+        line=dict(width=1),
+        opacity=0.5,
+    ))
+    fig.add_trace(go.Scatter(
+        x=df["timestep"],
+        y=std_cc,
+        mode="lines",
+        name="Mean Confidence-Corrected Surprise",
+        line=dict(width=1),
+        opacity=0.5,
+    ))
+    fig.add_trace(go.Scatter(
+        x=df["timestep"],
+        y=std_mis,
+        mode="lines",
+        name="Mean MIS",
+        line=dict(width=1),
+        opacity=0.5,
+    ))
+    
+    # Add smoothed standardized traces (thicker, solid lines)
+    fig.add_trace(go.Scatter(
+        x=df["timestep"],
+        y=std_bf_smooth,
+        mode="lines",
+        name="Mean Bayes Factor Surprise (Smoothed)",
+        line=dict(width=2),
+    ))
+    fig.add_trace(go.Scatter(
+        x=df["timestep"],
+        y=std_cc_smooth,
+        mode="lines",
+        name="Mean Confidence-Corrected Surprise (Smoothed)",
+        line=dict(width=2),
+    ))
+    fig.add_trace(go.Scatter(
+        x=df["timestep"],
+        y=std_mis_smooth,
+        mode="lines",
+        name="Mean MIS (Smoothed)",
+        line=dict(width=2),
+    ))
+    fig.update_layout(
+        title="Mean Surprise Over Time (Standardised for Comparison)",
+        xaxis_title="Timestep",
+        yaxis_title="Standardised Surprise (z-score)",
+        legend_title="Surprise Types",
+        yaxis=dict(range=[-3, 3]),
     )
     return fig
 
@@ -1111,6 +1249,9 @@ def createCharts(df):
 
     surprises_fig = surpriseChart(df)
     surprises_fig.show()
+
+    surprises_norm_fig = surpriseChartNormalized(df)
+    surprises_norm_fig.show()
 
     satisfaction_fig = satisfactionPlots(df = df.filter(items=["timestep", "mecsattimestep", "rplsattimestep"]))
     satisfaction_fig.show()

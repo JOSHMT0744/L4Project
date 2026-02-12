@@ -74,7 +74,7 @@ public class DeltaIOTConnector {
 	
 	// History of mutual information values per mote for MIS calculation
 	private Map<Integer, ArrayList<Double>> miHistory;
-	private int lookback = 5; // m - lookback period for MIS calculation
+	private int lookback = 4; // m - lookback period for MIS calculation (configurable via setLookback)
 	// Track which timesteps have already had bounds written (to avoid duplicates)
 	private int lastBoundsTimestep = -1;
 	
@@ -123,6 +123,18 @@ public class DeltaIOTConnector {
 	
 	public double getP_c() {
 		return this.p_c;
+	}
+	
+	/** Set lookback period (m) for MIS calculation. Must be > 0. Used in MIS = MI[current] - MI[current - lookback]. */
+	public void setLookback(int lookback) {
+		if (lookback <= 0) {
+			throw new IllegalArgumentException("lookback must be > 0, got " + lookback);
+		}
+		this.lookback = lookback;
+	}
+	
+	public int getLookback() {
+		return this.lookback;
 	}
 	
 	/** Set whether to use surprise-based (varSMiLE) or classic Bayesian transition belief updates. */

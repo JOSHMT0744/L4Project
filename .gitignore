@@ -1,9 +1,6 @@
 <<<<<<< HEAD
-<<<<<<< HEAD
 /bin/
 =======
-=======
->>>>>>> noiseInjector
 # Eclipse IDE
 .settings/
 .project
@@ -78,7 +75,3 @@ logs/
 *.temp
 *~
 .cache/
-<<<<<<< HEAD
->>>>>>> cc7dc8e4cf87526637ef4bd814f36655c95d5516
-=======
->>>>>>> noiseInjector
