@@ -8,6 +8,8 @@ package iot;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import simulator.QoS;
 
 /**
@@ -34,51 +36,43 @@ public final class QoSDataHelper {
 	 *         on failure/timeout
 	 */
 	public static ArrayList<QoS> waitForQoSDataReady(int runNumber, int maxRetries, long retryDelayMs) {
-		System.out.println("Waiting for QoS data ready... maxRetries: " + maxRetries);
+		log.debug("Waiting for QoS data for run {}, maxRetries={}", runNumber, maxRetries);
 
 		if (runNumber <= 0) {
-			System.err.println("Warning: Invalid runNumber " + runNumber + ", must be > 0");
+			log.warn("Invalid runNumber {}, must be > 0", runNumber);
 			return new ArrayList<>();
 		}
 
 		for (int attempt = 0; attempt < maxRetries; attempt++) {
 			try {
 				if (DeltaIOTConnector.networkMgmt == null) {
-					System.err.println("Warning: networkMgmt is null, waiting...");
+					log.trace("networkMgmt null, waiting...");
 					Thread.sleep(retryDelayMs);
 					continue;
 				}
-
 				if (DeltaIOTConnector.networkMgmt.getSimulator() == null) {
-					System.err.println("Warning: simulator is null, waiting...");
+					log.trace("simulator null, waiting...");
 					Thread.sleep(retryDelayMs);
 					continue;
 				}
-
 				List<QoS> qosValues = DeltaIOTConnector.networkMgmt.getSimulator().getQosValues();
 				if (qosValues == null) {
-					System.err.println("Warning: qosValues list is null, waiting...");
+					log.trace("qosValues null, waiting...");
 					Thread.sleep(retryDelayMs);
 					continue;
 				}
-
 				int qosSize = qosValues.size();
-				System.out.println("getting network qos");
-				System.out.println("run number: " + runNumber);
-				System.out.println("qosValues size: " + qosSize);
-
 				if (qosSize >= runNumber) {
 					ArrayList<QoS> result = (ArrayList<QoS>) DeltaIOTConnector.networkMgmt.getNetworkQoS(runNumber);
-					System.out.println("result size: " + result.size());
+					log.trace("QoS ready for run {}, result size={}", runNumber, result.size());
 					return result;
 				}
-
 				Thread.sleep(retryDelayMs);
 			} catch (InterruptedException e) {
 				Thread.currentThread().interrupt();
 				break;
 			} catch (Exception e) {
-				System.err.println("Warning: Exception while waiting for QoS data: " + e.getMessage());
+				log.warn("Exception waiting for QoS: {}", e.getMessage());
 				try {
 					Thread.sleep(retryDelayMs);
 				} catch (InterruptedException ie) {
@@ -88,13 +82,13 @@ public final class QoSDataHelper {
 			}
 		}
 
-		System.err.println("Warning: Timeout waiting for QoS data for run " + runNumber);
+		log.warn("Timeout waiting for QoS data for run {}", runNumber);
 		try {
 			if (DeltaIOTConnector.networkMgmt != null) {
 				return (ArrayList<QoS>) DeltaIOTConnector.networkMgmt.getNetworkQoS(runNumber);
 			}
 		} catch (Exception e) {
-			System.err.println("Warning: Failed to get QoS data on timeout: " + e.getMessage());
+			log.warn("Failed to get QoS on timeout: {}", e.getMessage());
 		}
 		return new ArrayList<>();
 	}

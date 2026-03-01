@@ -19,6 +19,8 @@ import pomdp.POMDP;
 import solver.BeliefPoint;
 
 import org.apache.commons.math3.special.Gamma;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 // TODO: use polarity of MIS surprise as an explainer of the learning behaviour of the agent
 
@@ -26,6 +28,7 @@ import org.apache.commons.math3.special.Gamma;
  * The connector between the Simulator and the MAPE-K loop
  */
 public class DeltaIOTConnector {
+	private static final Logger log = LogManager.getLogger(DeltaIOTConnector.class);
 	
 	/**
 	 * Data class to hold MIS (Mutual Information Surprise) value along with its confidence bounds.
@@ -155,11 +158,9 @@ public class DeltaIOTConnector {
 	}
 
 	public int getObservation() {
-		System.out.println("observation function: mote no:  "+DeltaIOTConnector.selectedmote.getMoteid());
-		//for (Link link : DeltaIOTConnector.selectedmote.getLinks()) {
+		log.trace("Observation function: mote {}", DeltaIOTConnector.selectedmote.getMoteid());
 		for (Link link : DeltaIOTConnector.selectedmote.getLinks()) {	
-			System.out.println("SNR: "+link.getSNR());
-			System.out.println("Distribution factor:"+link.getDistribution());
+			log.trace("Link SNR={}, distribution={}", link.getSNR(), link.getDistribution());
 		//if (link.getSNR() > 0 && link.getPower()>0) {
 			if (link.getSNR() > 0) {
 				//DeltaIOTConnector.selectedmote=m;
@@ -190,7 +191,7 @@ public class DeltaIOTConnector {
 		if (measure.equals("CC") || measure.equals("BF") || measure.equals("MIS")) {
 			this.surpriseMeasureForGamma = measure;
 		} else {
-			System.err.println("Warning: Invalid surprise measure '" + measure + "'. Use 'CC', 'BF', or 'MIS'. Keeping current: " + this.surpriseMeasureForGamma);
+			log.warn("Invalid surprise measure '{}'; use CC, BF, or MIS. Keeping: {}", measure, this.surpriseMeasureForGamma);
 		}
 	}
 	
@@ -358,7 +359,7 @@ public class DeltaIOTConnector {
 	 */
 	public void logMoteAndLinkMetrics(Mote mote, int timestep) {
 		if (mote == null) {
-			System.err.println("Warning: Attempted to log metrics for null mote at timestep " + timestep);
+			log.warn("Attempted to log metrics for null mote at timestep {}", timestep);
 			return;
 		}
 		
@@ -410,7 +411,7 @@ public class DeltaIOTConnector {
 							writer.newLine();
 						} catch (Exception e) {
 							// Handle any errors accessing link properties
-							System.err.println("Warning: Error accessing link properties for mote " + moteId + 
+							log.warn("Error accessing link properties for mote {}: {}", 
 								", link " + linkIndex + " at timestep " + timestep + ": " + e.getMessage());
 							// Log partial data with error indicators
 							try {
@@ -418,7 +419,7 @@ public class DeltaIOTConnector {
 									timestep, moteId, linkIndex, -1, -1, Double.NaN, -1, -1, -1));
 								writer.newLine();
 							} catch (IOException ioException) {
-								System.err.println("Error writing partial link data: " + ioException.getMessage());
+								log.error("Error writing partial link data: {}", ioException.getMessage());
 							}
 						}
 					}
@@ -426,9 +427,7 @@ public class DeltaIOTConnector {
 				writer.flush(); // Ensure data is written immediately
 			}
 		} catch (IOException e) {
-			System.err.println("Error writing mote metrics to file at timestep " + timestep + 
-				" for mote " + (mote != null ? mote.getMoteid() : "null") + ": " + e.getMessage());
-			e.printStackTrace();
+			log.error("Error writing mote metrics at timestep {} for mote {}: {}", timestep, mote != null ? mote.getMoteid() : "null", e.getMessage());
 		}
 	}
 	
@@ -452,9 +451,7 @@ public class DeltaIOTConnector {
 				writer.flush(); // Ensure data is written immediately
 			}
 		} catch (IOException e) {
-			System.err.println("Error writing MIS bounds to file at timestep " + timestep + ": " + e.getMessage());
-			System.err.println("Current working directory: " + System.getProperty("user.dir"));
-			e.printStackTrace();
+			log.error("Error writing MIS bounds at timestep {}: {} (cwd={})", timestep, e.getMessage(), System.getProperty("user.dir"));
 		}
 	}
 	
@@ -811,22 +808,12 @@ public class DeltaIOTConnector {
 	///perform actions for simulator DeltaIOT
 	public void performITP() { 	
 		// First, ensure all failed links (and links from off motes) have distribution set to 0 across all motes.
-		// isLinkOff(source,dest) returns true when the link is failed or when the source mote is off.
-		// This must happen before any other distribution adjustments
 		if (noiseInjector != null) {
 			for (Mote mote : DeltaIOTConnector.motes) {
 				for (Link link : mote.getLinks()) {
 					DeltaIOTConnector.selectedlink = link;
 					if (noiseInjector.isLinkOff(link.getSource(), link.getDest())) {
-						System.out.println("LINK OFF: " + link.getSource() + " -> " + link.getDest());
-						System.out.println("LINK DISTRIBUTION: " + DeltaIOTConnector.selectedlink.getDistribution());
-						System.out.println("LINK POWER: " + DeltaIOTConnector.selectedlink.getPower());
-						System.out.println("LINK SF: " + DeltaIOTConnector.selectedlink.getSF());
-						System.out.println("LINK SNR: " + DeltaIOTConnector.selectedlink.getSNR());
-						System.out.println("LINK SOURCE: " + DeltaIOTConnector.selectedlink.getSource());
-						System.out.println("LINK DEST: " + DeltaIOTConnector.selectedlink.getDest());
-						
-						// Force distribution to 0 for failed links
+						log.debug("Link off {}-{}: distribution=0 enforced (ITP)", link.getSource(), link.getDest());
 						DeltaIOTConnector.selectedlink.setDistribution(0);
 						// Apply settings to enforce the distribution
 						List<LinkSettings> linkSettings = new LinkedList<LinkSettings>();

@@ -13,6 +13,7 @@ DeltaIoT is a sensor network of **Heat**, **PIR**, and **RFID** nodes with a **G
 - **JDK 8+**
 - **Python 3.7+** (for `createCharts.py`)
 - **DeltaIoT / Simulator JARs** in `libraries/` (and any deps, e.g. `json-simple`). Ensure `Simulator.jar` and `deltaiot` JARs are on the classpath.
+- **Log4j 2** (optional but recommended for logging): add `log4j-api-2.24.1.jar` and `log4j-core-2.24.1.jar` to `libraries/`. Download from [Maven Central](https://central.sonatype.com/artifact/org.apache.logging.log4j/log4j-core/2.24.1). The root `log4j2.xml` is picked up when the classpath includes `.` (e.g. `.;bin;libraries/*` on Windows).
 
 ## Machine setup (development and run environment)
 
@@ -66,8 +67,8 @@ cd L4Project
 # Compile (adjust to your layout; include all src and libraries)
 javac -cp "libraries/*" -d bin -sourcepath src src/main/*.java src/pomdp/*.java src/solver/*.java src/iot/*.java
 
-# Run (Windows use ;  Linux/Mac use :)
-java -cp "bin;libraries/*" main.SolvePOMDP
+# Run (Windows use ;  Linux/Mac use :). Include . for log4j2.xml.
+java -cp ".;bin;libraries/*" main.SolvePOMDP
 ```
 
 ### 5. Output and charts

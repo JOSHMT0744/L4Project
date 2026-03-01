@@ -8,6 +8,7 @@ import sys
 import subprocess
 import dash
 from dash import dcc, html, Input, Output
+from loguru import logger
 
 def satisfactionViolins(df):
     fig = make_subplots(
@@ -1220,7 +1221,7 @@ def createMoteMetricsCharts(df_mote_metrics):
     
     :param df_mote_metrics: DataFrame with mote metrics
     """
-    print("Creating mote metrics visualizations...")
+    logger.info("Creating mote metrics visualizations...")
     
     # Time series charts
     time_series_fig = moteMetricsTimeSeries(df_mote_metrics)
@@ -1350,25 +1351,24 @@ def getData():
                 continue
             # Skip empty files to avoid EmptyDataError
             if os.path.getsize(file_path) == 0:
-                print(f"Warning: Skipping empty file: {filename}")
+                logger.warning("Skipping empty file: {}", filename)
                 continue
             try:
                 # Read CSV with whitespace separator, skip bad lines
                 df = pd.read_csv(file_path, sep=r"\s+", header=None, on_bad_lines='skip', engine='python')
             except pd.errors.EmptyDataError:
-                print(f"Warning: Skipping empty file: {filename}")
+                logger.warning("Skipping empty file: {}", filename)
                 continue
             except pd.errors.ParserError as e:
-                print(f"Warning: Skipping file {filename} due to parsing error: {e}")
-                print(f"  File path: {file_path}")
+                logger.warning("Skipping file {} due to parsing error: {} (path: {})", filename, e, file_path)
                 continue
             except Exception as e:
-                print(f"Warning: Skipping file {filename} due to error: {e}")
+                logger.warning("Skipping file {} due to error: {}", filename, e)
                 continue
             
             # Skip if DataFrame is empty after reading
             if df.empty:
-                print(f"Warning: Skipping file {filename} - DataFrame is empty after reading")
+                logger.warning("Skipping file {} - DataFrame is empty after reading", filename)
                 continue
             
             file_col_name = filename.split('.')[0].lower()
@@ -1412,7 +1412,7 @@ def kill_processes_on_port(port=8050):
         
         # Check if script exists
         if not os.path.exists(script_path):
-            print(f"Warning: Port cleanup script not found at {script_path}. Skipping port check.")
+            logger.warning("Port cleanup script not found at {}. Skipping port check.", script_path)
             return
         
         # Run the script
@@ -1428,10 +1428,10 @@ def kill_processes_on_port(port=8050):
         if result.stdout:
             print(result.stdout.strip())
         if result.stderr and result.returncode != 0:
-            print(f"Warning: {result.stderr.strip()}")
+            logger.warning("Port check stderr: {}", result.stderr.strip())
     
     except subprocess.TimeoutExpired:
-        print(f"Warning: Timeout while checking port {port}. Proceeding anyway...")
+        logger.warning("Timeout while checking port {}. Proceeding anyway.", port)
     except Exception as e:
         print(f"Warning: Error checking port {port}: {e}. Proceeding anyway...")
 
@@ -1461,7 +1461,7 @@ def run():
         print(df_mote_metrics.head(30))
         
         # Create static charts (for backward compatibility)
-        print("\nCreating static mote metrics visualizations...")
+        logger.info("Creating static mote metrics visualizations...")
         #createMoteMetricsCharts(df_mote_metrics)
         
         # Create and launch interactive Dash app
@@ -1470,9 +1470,7 @@ def run():
         # Kill any existing processes on port 8050 before starting
         kill_processes_on_port(8050)
         
-        print("The app will open in your default web browser.")
-        print("You can filter by motes and links to get fine-grained views of the metrics.")
-        print("Close this terminal or press Ctrl+C to stop the server.")
+        logger.info("Dash app: filter by motes/links; Ctrl+C to stop.")
         
         app = createInteractiveMoteMetricsApp(df_mote_metrics)
         # use_reloader=False: with debug=True the Werkzeug reloader would run this script
@@ -1480,11 +1478,9 @@ def run():
         app.run(debug=True, port=8050, use_reloader=False)
         
     except FileNotFoundError as e:
-        print(f"\nWarning: Could not load mote metrics: {e}")
-        print("Skipping mote metrics visualizations.")
+        logger.warning("Could not load mote metrics: {}. Skipping mote metrics visualizations.", e)
     except Exception as e:
-        print(f"\nWarning: Error creating mote metrics charts: {e}")
-        print("Skipping mote metrics visualizations.")
+        logger.warning("Error creating mote metrics charts: {}. Skipping mote metrics visualizations.", e)
         import traceback
         traceback.print_exc()
 

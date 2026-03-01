@@ -56,9 +56,11 @@ import solver.ERPerseus;
 import solver.fastERPBVI;
 import solver.ERPolicy;
 
-
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 public class SolvePOMDP {
+	private static final Logger log = LogManager.getLogger(SolvePOMDP.class);
 	/* Class for configuring and running each component of the  */
 	private SolverProperties sp;     // object containing user-defined properties
 	private Solver solver;           // the solver that we use to solve a POMDP, which is exact or approximate
@@ -133,15 +135,14 @@ public class SolvePOMDP {
 		// Try to find Python executable in virtual environment
 		String pythonPath = findPythonExecutable();
 		if (pythonPath == null) {
-			System.err.println("Warning: Python virtual environment not found. Skipping chart generation.");
-			System.err.println("Expected path: .venv\\Scripts\\python.exe (Windows) or .venv/bin/python (Linux/Mac)");
+			log.warn("Python virtual environment not found. Skipping chart generation. Expected: .venv\\Scripts\\python.exe or .venv/bin/python");
 			return;
 		}
 		
 		// Find createCharts.py relative to project root
 		String chartsScript = findChartsScript();
 		if (chartsScript == null) {
-			System.err.println("Warning: createCharts.py not found. Skipping chart generation.");
+			log.warn("createCharts.py not found. Skipping chart generation.");
 			return;
 		}
 		
@@ -155,7 +156,7 @@ public class SolvePOMDP {
 		
 		String line;
 		while ((line = reader.readLine()) != null) {
-			System.out.println("PYTHON: " + line); // receives pandas output
+			log.debug("PYTHON: {}", line);
 		}
 		p.waitFor();
 	}
@@ -259,9 +260,7 @@ public class SolvePOMDP {
 			properties.load(file);
 			file.close();
 		} catch (FileNotFoundException e) {
-			System.err.println("Error: Could not find solver.config at: " + configPath);
-			System.err.println("Current working directory: " + System.getProperty("user.dir"));
-			e.printStackTrace();
+			log.error("Could not find solver.config at: {}; cwd={}", configPath, System.getProperty("user.dir"));
 			throw new RuntimeException("solver.config file not found. Please ensure it exists in the src/ directory.", e);
 		} catch (IOException e) {
 			e.printStackTrace();
@@ -369,17 +368,10 @@ public class SolvePOMDP {
 			sp.setDumpActionLabels(dumpActionLabelsStr.equals("true"));
 		}
 		
-		System.out.println();
-		System.out.println("=== SOLVER PARAMETERS ===");
-		System.out.println("Epsilon: "+sp.getEpsilon());
-		System.out.println("Value function tolerance: "+sp.getValueFunctionTolerance());	
-		System.out.println("Time limit: "+sp.getTimeLimit());
-		System.out.println("Belief sampling runs: "+sp.getBeliefSamplingRuns());
-		System.out.println("Belief sampling steps: "+sp.getBeliefSamplingSteps());
-		System.out.println("Dump policy graph: "+sp.dumpPolicyGraph());
-		System.out.println("Dump action labels: "+sp.dumpActionLabels());
-		System.out.println("Lambda: "+sp.getLambda());
-		System.out.println("Run seed: "+runSeed+", Surprise measure: "+surpriseMeasureForGamma+", p_c: "+p_c+", useSurpriseUpdating: "+useSurpriseUpdating+", lookback: "+lookback+", mecThreshold: "+mecThreshold+", rplThreshold: "+rplThreshold);
+		log.info("Solver parameters: epsilon={}, valueFunctionTolerance={}, timeLimit={}, beliefSamplingRuns={}, beliefSamplingSteps={}, lambda={}",
+			sp.getEpsilon(), sp.getValueFunctionTolerance(), sp.getTimeLimit(), sp.getBeliefSamplingRuns(), sp.getBeliefSamplingSteps(), sp.getLambda());
+		log.info("Experiment: runSeed={}, surpriseMeasure={}, p_c={}, useSurpriseUpdating={}, lookback={}, mecThreshold={}, rplThreshold={}",
+			runSeed, surpriseMeasureForGamma, p_c, useSurpriseUpdating, lookback, mecThreshold, rplThreshold);
 		
 		// load required POMDP algorithm (use runSeed for reproducible experiments)
 		switch (algorithmType) {
@@ -402,7 +394,7 @@ public class SolvePOMDP {
 				throw new RuntimeException("Unexpected algorithm type in properties file");
 		}
 		
-		System.out.println("Algorithm: "+algorithmType);
+		log.info("Algorithm: {}", algorithmType);
 	}
 	
 	/**
@@ -437,15 +429,13 @@ public class SolvePOMDP {
 	 */
 	private void configureDirectories() {
 		String path = SolvePOMDP.class.getProtectionDomain().getCodeSource().getLocation().getPath();
-		System.out.println("path"+path);
 		String decodedPath = "";
-		
 		try {
 			decodedPath = URLDecoder.decode(path, "UTF-8");
-			System.out.println("decodedPath"+decodedPath);
 		} catch (UnsupportedEncodingException e) {
-			e.printStackTrace();
+			log.error("Failed to decode path", e);
 		}
+		log.debug("Code source path: {}", decodedPath);
 		
 		if(decodedPath.endsWith(".jar")) {
 			// solver has been started from jar, so we assume that output exists in the same directory as the jar file			
@@ -471,8 +461,6 @@ public class SolvePOMDP {
 		}	
 
 		File dir = new File(sp.getOutputDir());
-		System.out.println("dir"+dir);
-		
 		if(!dir.exists()) {
 		    boolean created = dir.mkdirs();
 		    if (!created) {
@@ -483,8 +471,7 @@ public class SolvePOMDP {
 		    throw new RuntimeException("Output path exists but is not a directory");
 		}
 		
-		System.out.println("Output directory: "+sp.getOutputDir());
-		System.out.println("Domain directory: "+domainDir);
+		log.info("Output directory: {}; Domain directory: {}", sp.getOutputDir(), domainDir);
 	}
 	
 	/**
@@ -643,21 +630,18 @@ public class SolvePOMDP {
 			obj.put("timestep", timestep+"");
 
 			iot.DeltaIOTConnector.motes = iot.DeltaIOTConnector.networkMgmt.getProbe().getAllMotes();
-			System.out.println("motes recieved");
+			log.debug("Timestep {}: motes received, count={}", timestep, iot.DeltaIOTConnector.motes.size());
 
 			// For timestep 0, no runs exist yet, so use default state 0
 			// For timestep > 0, getInitialState() uses timestepiot (last run of previous timestep) for current network state
 			int currState;
 			if (timestep == 0) {
-				// No runs exist yet at timestep 0, use default state
 				currState = 0;
 			} else {
 				currState = pomdp.getInitialState();
 			}
-			System.out.println("Initial state: "+currState);
 			pomdp.setCurrentState(currState);
-			
-			System.out.println("current state: "+ pomdp.getCurrentState());		
+			log.debug("Timestep {}: initial state={}", timestep, currState);		
 			
 			// Creating random order of motes to perform adaptation 
 			int numMotes = iot.DeltaIOTConnector.motes.size();
@@ -678,7 +662,7 @@ public class SolvePOMDP {
 			
 			for(int moteIndex : moteIndexes) {
 				Mote m = iot.DeltaIOTConnector.motes.get(moteIndex);
-				System.out.println("\nTime Step: "+timestep);
+				log.trace("Time step {} mote {}", timestep, moteIndex);
 				// Simulator object holds the list of motes, gateways, turnOrder, runInfo and qos values.
 				// This will simulate sending packets through the network to the gateways
 				// Each gateway will aggregate information about packet-loss and power-consumption
@@ -698,8 +682,7 @@ public class SolvePOMDP {
 				 */
 				
 				iot.DeltaIOTConnector.selectedmote = m;
-				System.out.println("Mote Id"+iot.DeltaIOTConnector.selectedmote.getMoteid());
-				
+				log.trace("Mote id: {}", iot.DeltaIOTConnector.selectedmote.getMoteid());
 				obj.put("Mote Id", iot.DeltaIOTConnector.selectedmote.getMoteid()+"");		
 			
 				/*
@@ -712,7 +695,7 @@ public class SolvePOMDP {
 				 */
 				BeliefPoint initialbelief = pomdp.getInitialBelief(); // b0
 				double beliefValues[] = initialbelief.getBelief();
-				System.out.println(beliefValues[0]+" "+beliefValues[1]+" "+beliefValues[2]+" "+beliefValues[3]);
+				log.trace("Belief: [{}, {}, {}, {}]", beliefValues[0], beliefValues[1], beliefValues[2], beliefValues[3]);
 				double mecsatprob = beliefValues[0]+beliefValues[1]; // Sum of all states in which MEC is satisfied
 				double rplsatprob = beliefValues[0]+beliefValues[2];
 				pwMECSatProb.println(moteIndex+" "+timestep+" "+mecsatprob);
@@ -729,16 +712,7 @@ public class SolvePOMDP {
 				 */
 				// Each AlphaVector encodes a linear function over beliefs V(b) = alpha * b
 				ArrayList<AlphaVector> V1 = solver.solve(pomdp);
-				System.out.println("Value size: "+V1.size()+"  Action labels: "+ V1.get(0).getAction());
-				
-				// Loop over alpha vectors: inspect each vector and compute its value at the belief
-				for(int i=0; i < V1.size(); i++) {
-					System.out.println("~~~~~~~~~~~~~~~~~~~~~~~");
-					System.out.println("Action labels: "+ V1.get(i).getAction());
-					System.out.println("~~~~~~~~~~~~~~~~~~~~~~~");
-					double expectedvalue = V1.get(i).getDotProduct(pomdp.getInitialBelief().getBelief());
-					System.out.println("Expected Value: "+ expectedvalue);
-				}
+				log.debug("Timestep {} mote {}: value size={}, best action={}", timestep, moteIndex, V1.size(), V1.get(0).getAction());
 
 				// Select action using stochastic policy (softmax) based on Q-functions
 				int selectedAction;
@@ -752,13 +726,10 @@ public class SolvePOMDP {
 					erPolicy = new ERPolicy(pomdp, V1, lambda, new Random(runSeed));
 					selectedAction = erPolicy.selectAction(pomdp.getInitialBelief());
 				} else {
-					// Fallback for other solvers (deterministic/greedy)
 					int bestIndex = AlphaVector.getBestVectorIndex(pomdp.getInitialBelief().getBelief(), V1);
 					selectedAction = V1.get(bestIndex).getAction();
-					System.out.println("Selected Action (greedy): " + selectedAction);
 				}
-				
-				System.out.println("Selected Action: " + selectedAction);				
+				log.debug("Selected action: {}", selectedAction);				
 				
 				pwaction.println(timestep+" "+selectedAction);
 				pwaction.flush();
@@ -789,8 +760,7 @@ public class SolvePOMDP {
 					System.setErr(originalErr);
 				}
 				pomdp = iot.DeltaIOTConnector.p; // as POMDP is being updated in performAction, must adjust the variable `pomdp` here
-			 
-				System.out.println("Current State: " + pomdp.getCurrentState());
+				log.trace("Current state after action: {}", pomdp.getCurrentState());
 				
 				/*
 				 * MAPE-K PHASE: MONITOR (post-execution measurement)
@@ -845,22 +815,13 @@ public class SolvePOMDP {
 				// Each mote's baseline is implicitly the previous mote's post-action state
 				int expectedMaxRuns = (timestep + 1) * numMotes;
 				if (currentRun > expectedMaxRuns) {
-					System.err.println("Warning: Run number " + currentRun + " exceeds expected maximum " + expectedMaxRuns);
-					System.err.println("Timestep: " + timestep + ", Mote: " + moteIndex + ", timestepiot: " + iot.DeltaIOTConnector.timestepiot);
+					log.warn("Run number {} exceeds expected max {} (timestep={}, mote={})", currentRun, expectedMaxRuns, timestep, moteIndex);
 				}
-				
-				// Wait for QoS data to be ready before accessing it to prevent warnings
-				// This ensures the simulator has completed data aggregation for all motes
-				System.out.println("Waiting for QoS data ready...");
+				log.debug("Waiting for QoS data for run {}", currentRun);
 				ArrayList<QoS> result = QoSDataHelper.waitForQoSDataReady(currentRun, 50, 300);
 				if (result == null || result.isEmpty()) {
-					System.err.println("Warning: No QoS data available for run " + currentRun + ". Using defaults.");
-					System.err.println("Timestep: " + timestep + ", Mote: " + moteIndex + ", timestepiot: " + iot.DeltaIOTConnector.timestepiot);
+					log.warn("No QoS data for run {} (timestep={}, mote={}); using defaults", currentRun, timestep, moteIndex);
 					result = new ArrayList<QoS>();
-					System.err.println("Continuing with default QoS values for this mote iteration");
-				}
-				if (result != null && !result.isEmpty()) {
-					System.out.println("QOS list size: "+result.size());
 				}
 				
 				// Extract and log QoS metrics from the post-action simulation run.
@@ -877,11 +838,10 @@ public class SolvePOMDP {
 			 		packetLoss = result.get(result.size()-1).getPacketLoss();
 			 		energyConsumption = result.get(result.size()-1).getEnergyConsumption();
 			 	} else {
-			 		System.err.println("Warning: Using default QoS values (packetLoss=0.0, energyConsumption=0.0)");
+			 		log.warn("Using default QoS (packetLoss=0, energyConsumption=0)");
 			 	}
-			 	// Reduced logging frequency - only log every 50 timesteps to reduce console spam
 			 	if (timestep % 50 == 0) {
-			 		System.out.println("packet loss: "+packetLoss+"   Energy Consumption: "+energyConsumption);
+			 		log.info("Timestep {}: packetLoss={}, energyConsumption={}", timestep, packetLoss, energyConsumption);
 			 	}
 			 	
 			 	pwMECSat.println(moteIndex+" "+timestep+" "+energyConsumption);
@@ -916,9 +876,8 @@ public class SolvePOMDP {
 			
 			// Validate that we have QoS data before accessing it
 			if (result1 == null || result1.isEmpty()) {
-				System.err.println("Warning: getQosValues() returned empty or null at timestep " + timestep);
-				System.err.println("Skipping timestep-level file write for timestep " + timestep);
-				continue; // Skip this timestep's file write
+				log.warn("getQosValues() empty at timestep {}; skipping timestep-level write", timestep);
+				continue;
 			}
 			
 			// Total packet loss and energy consumption across every mote in the network
@@ -927,9 +886,8 @@ public class SolvePOMDP {
 			QoS lastQoS = result1.get(lastIndex);
 			
 			if (lastQoS == null) {
-				System.err.println("Warning: Last QoS entry is null at timestep " + timestep);
-				System.err.println("QoS list size: " + result1.size());
-				continue; // Skip this timestep's file write
+				log.warn("Last QoS entry null at timestep {} (list size={})", timestep, result1.size());
+				continue;
 			}
 			
 			double pl1 = lastQoS.getPacketLoss();
@@ -940,9 +898,8 @@ public class SolvePOMDP {
 			plstimestep = plstimestep+pl1;
 			ecstimestep = ecstimestep+ec1;
 			
-			// Reduced logging frequency - only log every 50 timesteps to reduce console spam
 			if (timestep % 50 == 0) {
-				System.out.println("packet loss: "+plstimestep+"energy consumption"+ecstimestep);
+				log.debug("Timestep {} aggregate: pl={}, ec={}", timestep, pl1, ec1);
 			}
 			
 			// Write to timestep-level files
@@ -951,29 +908,19 @@ public class SolvePOMDP {
 			pwMECSattimestep.flush();
 			pwRPLSattimestep.flush();
 			
-			// Stats check for failed components
-			System.out.println(noiseInjector.getFailureStats());
+			log.debug("Failure stats: {}", noiseInjector.getFailureStats());
 		}
 		
-		// print results
 		String outputFilePG = new File(outputDir, pomdp.getInstanceName() + ".pg").getAbsolutePath();
 		String outputFileAlpha = new File(outputDir, pomdp.getInstanceName() + ".alpha").getAbsolutePath();
-		System.out.println();
-		System.out.println("=== RESULTS ===");
-		System.out.println("Expected value: "+solver.getExpectedValue());
-		System.out.println("Alpha vectors: "+outputFileAlpha);
-		if(sp.dumpPolicyGraph()) System.out.println("Policy graph: "+outputFilePG);
-		System.out.println("Running time: "+solver.getTotalSolveTime()+" sec");
+		log.info("Results: expectedValue={}, alphaVectors={}, runningTimeSec={}", solver.getExpectedValue(), outputFileAlpha, solver.getTotalSolveTime());
+		if (sp.dumpPolicyGraph()) log.info("Policy graph: {}", outputFilePG);
 		}
-		catch(IOException ioex)
-		{
-			System.err.println("IOException caught in runCaseIoT:");
-			ioex.printStackTrace();
+		catch(IOException ioex) {
+			log.error("IOException in runCaseIoT", ioex);
 		}
-		catch(Exception ex)
-		{
-			System.err.println("Unexpected exception caught in runCaseIoT:");
-			ex.printStackTrace();
+		catch(Exception ex) {
+			log.error("Unexpected exception in runCaseIoT", ex);
 		}
 		finally
 		{
@@ -1003,8 +950,7 @@ public class SolvePOMDP {
 			try {
 				resource.close();
 			} catch (IOException e) {
-				// Log but don't throw - we're in cleanup
-				System.err.println("Warning: Error closing resource: " + e.getMessage());
+				log.warn("Error closing resource: {}", e.getMessage());
 			}
 		}
 	}
@@ -1016,15 +962,9 @@ public class SolvePOMDP {
 	public static void main(String[] args) {	
 		long startTime = System.currentTimeMillis();
 		
-		System.out.println("SolvePOMDP v0.0.3");
-		System.out.println("Author: Erwin Walraven");
-		System.out.println("Web: erwinwalraven.nl/solvepomdp");
-		System.out.println("Delft University of Technology");
-		
-		if(args.length == 0) {
-			System.out.println();
-			System.out.println("First argument must be the name of a file in the domains directory!");
-			//System.exit(0);
+		log.info("SolvePOMDP v0.0.3 (Erwin Walraven, erwinwalraven.nl/solvepomdp, TU Delft)");
+		if (args.length == 0) {
+			log.info("First argument should be the name of a file in the domains directory");
 		}
 		
 		SolvePOMDP ps = new SolvePOMDP();
@@ -1033,10 +973,7 @@ public class SolvePOMDP {
 		long endTime = System.currentTimeMillis();
 		long totalTime = endTime - startTime;
 		double totalTimeSeconds = totalTime / 1000.0;
-		System.out.println();
-		System.out.println("========================================");
-		System.out.println("Total execution time: " + String.format("%.2f", totalTimeSeconds) + " seconds");
-		System.out.println("========================================");
+		log.info("Total execution time: {} seconds", String.format("%.2f", totalTimeSeconds));
 
 		try {
 			runPython();

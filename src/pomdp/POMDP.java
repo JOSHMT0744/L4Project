@@ -26,7 +26,11 @@ import deltaiot.services.Link;
 import simulator.QoS;
 import solver.BeliefPoint;
 
-public class POMDP {	
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+
+public class POMDP {
+	private static final Logger log = LogManager.getLogger(POMDP.class);	
 	private String filename;
 	private String instanceName;
 	private int nStates;
@@ -246,7 +250,7 @@ public class POMDP {
 		// The active instance has noiseInjector properly configured
 		iot.DeltaIOTConnector dataConnector = iot.DeltaIOTConnector.activeInstance;
 		if (dataConnector == null) {
-			System.err.println("Warning: activeInstance is null in POMDP.nextState(), creating fallback instance");
+			log.warn("activeInstance is null in POMDP.nextState(), creating fallback instance");
 			dataConnector = new iot.DeltaIOTConnector();
 		}
 		
@@ -255,7 +259,7 @@ public class POMDP {
 			dataConnector.performDTP(); // decrease transmission power			
 		}
 		else if(action==1) {
-			System.out.println("ITP");
+			log.trace("Action: ITP");
 			dataConnector.performITP();	 // increase transmission power		
 		}
 		
@@ -283,7 +287,7 @@ public class POMDP {
 		// Wait for QoS data to be ready before accessing it to prevent warnings
 		ArrayList<QoS> result = iot.QoSDataHelper.waitForQoSDataReady(currentRun, 20, 100);
 		if (result == null || result.isEmpty()) {
-			System.err.println("Warning: No QoS data available for run " + currentRun + " (requested " + requestedRun + ") in nextState(), using current state");
+			log.warn("No QoS data for run {} (requested {}) in nextState(), using current state", currentRun, requestedRun);
 			// Return current state as fallback
 			return currentState;
 		}
@@ -320,7 +324,7 @@ public class POMDP {
 			return 0;
 		}
 		
-		System.out.println("result size"+result.size());
+		log.trace("getInitialState result size: {}", result.size());
 		// Get PL and EC at current timestep
 		double packetLoss = result.get(result.size()-1).getPacketLoss();
 		double energyConsumption = result.get(result.size()-1).getEnergyConsumption();
@@ -371,11 +375,9 @@ public class POMDP {
 	public int getObservation(Integer action, Integer statePrime) {
 		// TODO Auto-generated method stub
 		
-		System.out.println("observation function: mote no:  "+iot.DeltaIOTConnector.selectedmote.getMoteid());
-		//for (Link link : DeltaIOTConnector.selectedmote.getLinks()) {
+		log.trace("getObservation: mote {}", iot.DeltaIOTConnector.selectedmote.getMoteid());
 		for (Link link : iot.DeltaIOTConnector.selectedmote.getLinks()) {	
-			System.out.println("SNR: "+link.getSNR());
-			System.out.println("Distribution factor:"+link.getDistribution());
+			log.trace("Link SNR={}, distribution={}", link.getSNR(), link.getDistribution());
 		//if (link.getSNR() > 0 && link.getPower()>0) {
 			if (link.getSNR() > 0) {
 				//DeltaIOTConnector.selectedmote=m;

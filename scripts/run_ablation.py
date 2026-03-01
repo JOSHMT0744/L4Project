@@ -16,6 +16,11 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
+from loguru import logger
+
+# Configure loguru: default INFO, stderr
+logger.remove()
+logger.add(sys.stderr, level="INFO", format="<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | <level>{message}</level>")
 
 # Default seeds and paths
 SEEDS = [222, 223, 224]
@@ -141,7 +146,8 @@ def write_run_config(
 
 def run_java_solver(root: Path, config_path: Path, cp_sep: str) -> bool:
     """Run main.SolvePOMDP with -DconfigPath=config_path. Returns True on success."""
-    cp = f"bin{cp_sep}libraries/*"
+    # Include . so log4j2.xml in project root is found
+    cp = f".{cp_sep}bin{cp_sep}libraries/*"
     cmd = [
         "java",
         f"-DconfigPath={config_path.resolve()}",
@@ -157,14 +163,14 @@ def run_java_solver(root: Path, config_path: Path, cp_sep: str) -> bool:
             timeout=3600,
         )
         if result.returncode != 0:
-            print(result.stderr or result.stdout, file=sys.stderr)
+            logger.error("Solver failed: {}", result.stderr or result.stdout)
             return False
         return True
     except subprocess.TimeoutExpired:
-        print("Run timed out", file=sys.stderr)
+        logger.error("Run timed out")
         return False
     except Exception as e:
-        print(f"Run failed: {e}", file=sys.stderr)
+        logger.exception("Run failed: {}", e)
         return False
 
 
@@ -348,7 +354,7 @@ def run_single_ablation(
                 if ok:
                     run_dirs.append(run_dir)
                 else:
-                    print(f"Warning: run failed {abl_id} {surprise} {run_id}", file=sys.stderr)
+                    logger.warning("Run failed {} {} {}", abl_id, surprise, run_id)
     return run_dirs
 
 
@@ -417,9 +423,9 @@ def main_run(args: argparse.Namespace, root: Path, cp_sep: str) -> None:
         ablations = [a for a in ablations if a["id"] in args.ablations]
     (root / "output_dir" / "results").mkdir(parents=True, exist_ok=True)
     for abl in ablations:
-        print(f"Running ablation {abl['id']} ...")
+        logger.info("Running ablation {} ...", abl["id"])
         run_single_ablation(root, abl, seeds, cp_sep, args.quick)
-    print("Runs done. Building summary CSVs...")
+    logger.info("Runs done. Building summary CSVs...")
     for abl in ablations:
         write_summary_csvs(root, abl, seeds)
 
@@ -434,7 +440,7 @@ def main_summary_only(args: argparse.Namespace, root: Path) -> None:
         ablations = [a for a in ablations if a["id"] in args.ablations]
     for abl in ablations:
         write_summary_csvs(root, abl, seeds)
-    print("Summary CSVs written.")
+    logger.info("Summary CSVs written.")
 
 
 def main_plots(args: argparse.Namespace, root: Path) -> None:
@@ -444,7 +450,7 @@ def main_plots(args: argparse.Namespace, root: Path) -> None:
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
     except ImportError:
-        print("matplotlib not installed; skipping figures.", file=sys.stderr)
+        logger.warning("matplotlib not installed; skipping figures.")
         return
     results_dir = root / "output_dir" / "results"
     figures_dir = results_dir / "figures"
@@ -497,8 +503,8 @@ def main_plots(args: argparse.Namespace, root: Path) -> None:
         out = figures_dir / f"{abl_id}_metrics.png"
         plt.savefig(out, dpi=150)
         plt.close()
-        print(f"Saved {out}")
-    print("Figures saved to output_dir/results/figures/")
+        logger.info("Saved {}", out)
+    logger.info("Figures saved to output_dir/results/figures/")
 
 
 def main_readme(args: argparse.Namespace, root: Path) -> None:
@@ -556,7 +562,7 @@ From project root (L4Project):
     results_dir.mkdir(parents=True, exist_ok=True)
     with open(readme_path, "w", encoding="utf-8") as f:
         f.write(content)
-    print(f"Wrote {readme_path}")
+    logger.info("Wrote {}", readme_path)
 
 
 def main() -> None:
