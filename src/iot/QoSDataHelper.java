@@ -18,6 +18,7 @@ import simulator.QoS;
  * dependencies.
  */
 public final class QoSDataHelper {
+	private static final Logger log = LogManager.getLogger(QoSDataHelper.class);
 
 	private QoSDataHelper() {
 		// Utility class - prevent instantiation

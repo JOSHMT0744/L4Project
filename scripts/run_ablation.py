@@ -155,15 +155,14 @@ def run_java_solver(root: Path, config_path: Path, cp_sep: str) -> bool:
         "main.SolvePOMDP",
     ]
     try:
+        # Do not capture stdout/stderr so Java (Log4j) logs appear in the terminal
         result = subprocess.run(
             cmd,
             cwd=str(root),
-            capture_output=True,
-            text=True,
             timeout=3600,
         )
         if result.returncode != 0:
-            logger.error("Solver failed: {}", result.stderr or result.stdout)
+            logger.error("Solver exited with code {}", result.returncode)
             return False
         return True
     except subprocess.TimeoutExpired:
