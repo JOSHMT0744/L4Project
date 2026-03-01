@@ -53,6 +53,10 @@ public class POMDP {
 	
 	private HashMap<Integer,String> actionLabels;
 	
+	/** NFR thresholds for state discretisation: MEC = energy consumption (default 20), RPL = packet loss ratio (default 0.2). */
+	private double mecThreshold = 20.0;
+	private double rplThreshold = 0.20;
+	
 	public POMDP(String filename, 
 			int nStates, 
 			int nActions, 
@@ -287,16 +291,16 @@ public class POMDP {
 		// This is being performed inside of loop of the motes, so use timestepiot to get QoS for that specific mote
 		double energyConsumption = result.get(result.size()-1).getEnergyConsumption();
 		
-		if(energyConsumption < 20 && packetLoss < 0.20) {
+		if(energyConsumption < mecThreshold && packetLoss < rplThreshold) {
 			return 0;
 		}
-		else if(energyConsumption < 20 && packetLoss >= 0.20) {
+		else if(energyConsumption < mecThreshold && packetLoss >= rplThreshold) {
 			return 1;
 		}
-		else if(energyConsumption >= 20 && packetLoss < 0.20) {
+		else if(energyConsumption >= mecThreshold && packetLoss < rplThreshold) {
 			return 2;
 		}
-		else if(energyConsumption >= 20 && packetLoss >= 0.20) {
+		else if(energyConsumption >= mecThreshold && packetLoss >= rplThreshold) {
 			return 3;
 		}
 		
@@ -321,16 +325,16 @@ public class POMDP {
 		double packetLoss = result.get(result.size()-1).getPacketLoss();
 		double energyConsumption = result.get(result.size()-1).getEnergyConsumption();
 		
-		if(energyConsumption < 20 && packetLoss < 0.20) {
+		if(energyConsumption < mecThreshold && packetLoss < rplThreshold) {
 			return 0;
 		}
-		else if(energyConsumption < 20 && packetLoss >= 0.20) {
+		else if(energyConsumption < mecThreshold && packetLoss >= rplThreshold) {
 			return 1;
 		}
-		else if(energyConsumption >= 20 && packetLoss < 0.20) {
+		else if(energyConsumption >= mecThreshold && packetLoss < rplThreshold) {
 			return 2;
 		}
-		else if(energyConsumption >= 20 && packetLoss >= 0.20) {
+		else if(energyConsumption >= mecThreshold && packetLoss >= rplThreshold) {
 			return 3;
 		}
 		
@@ -343,6 +347,24 @@ public class POMDP {
 	
 	public void setCurrentState(int s) {
 		currentState=s;
+	}
+	
+	/** Set MEC (energy consumption) threshold for state discretisation; satisfied when energy < threshold. */
+	public void setMecThreshold(double mecThreshold) {
+		this.mecThreshold = mecThreshold;
+	}
+	
+	public double getMecThreshold() {
+		return mecThreshold;
+	}
+	
+	/** Set RPL (packet loss ratio) threshold for state discretisation; satisfied when packetLoss < threshold. */
+	public void setRplThreshold(double rplThreshold) {
+		this.rplThreshold = rplThreshold;
+	}
+	
+	public double getRplThreshold() {
+		return rplThreshold;
 	}
 	
 	

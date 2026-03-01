@@ -78,6 +78,10 @@ public class SolvePOMDP {
 	private List<int[]> linkFailureLinksList = null;
 	private int linkRecoveryTimestep = -1;
 	
+	/** Optional NFR thresholds (from solver.config): MEC = energy threshold (default 20), RPL = packet loss ratio (default 0.2). */
+	private double mecThreshold = 20.0;
+	private double rplThreshold = 0.20;
+	
 	/**
 	 * Find Python executable in virtual environment
 	 */
@@ -272,8 +276,10 @@ public class SolvePOMDP {
 		// Exact Algorithm Settings
 		sp.setEpsilon(Double.parseDouble(getPropertyOrThrow(properties, "epsilon")));
 
-		// Directories
-		sp.setOutputDirName(getPropertyOrThrow(properties, "outputDirectory"));
+		// Directories (optional JVM override -DoutputDirectory=... for experiment runners)
+		String outputDirFromConfig = getPropertyOrThrow(properties, "outputDirectory");
+		String outputDirOverride = System.getProperty("outputDirectory");
+		sp.setOutputDirName(outputDirOverride != null && !outputDirOverride.trim().isEmpty() ? outputDirOverride.trim() : outputDirFromConfig);
 		this.domainDirName = getPropertyOrThrow(properties, "domainDirectory");
 		
 		// Approximate Algorithm Settings
@@ -329,6 +335,18 @@ public class SolvePOMDP {
 				this.linkRecoveryTimestep = Integer.parseInt(linkRecoveryTimestepStr.trim());
 			}
 		}
+		
+		// Optional NFR thresholds for state discretisation
+		String mecThresholdStr = getProperty(properties, "mecThreshold", "20");
+		String rplThresholdStr = getProperty(properties, "rplThreshold", "0.2");
+		this.mecThreshold = Double.parseDouble(mecThresholdStr.trim());
+		this.rplThreshold = Double.parseDouble(rplThresholdStr.trim());
+		if (this.mecThreshold <= 0) {
+			throw new RuntimeException("mecThreshold must be > 0; got " + this.mecThreshold);
+		}
+		if (this.rplThreshold <= 0 || this.rplThreshold >= 1) {
+			throw new RuntimeException("rplThreshold must be in (0, 1); got " + this.rplThreshold);
+		}
 
 		// Error checking solver.config parameters
 		if(!algorithmType.equals("perseus") && !algorithmType.equals("gip") && !algorithmType.equals("erpbvi") && !algorithmType.equals("erperseus")) {
@@ -361,7 +379,7 @@ public class SolvePOMDP {
 		System.out.println("Dump policy graph: "+sp.dumpPolicyGraph());
 		System.out.println("Dump action labels: "+sp.dumpActionLabels());
 		System.out.println("Lambda: "+sp.getLambda());
-		System.out.println("Run seed: "+runSeed+", Surprise measure: "+surpriseMeasureForGamma+", p_c: "+p_c+", useSurpriseUpdating: "+useSurpriseUpdating+", lookback: "+lookback);
+		System.out.println("Run seed: "+runSeed+", Surprise measure: "+surpriseMeasureForGamma+", p_c: "+p_c+", useSurpriseUpdating: "+useSurpriseUpdating+", lookback: "+lookback+", mecThreshold: "+mecThreshold+", rplThreshold: "+rplThreshold);
 		
 		// load required POMDP algorithm (use runSeed for reproducible experiments)
 		switch (algorithmType) {
@@ -537,6 +555,8 @@ public class SolvePOMDP {
 				"\nCurrent working directory: " + System.getProperty("user.dir"));
 		}
 		POMDP pomdp = PomdpParser.readPOMDP(pomdpFile.getAbsolutePath());
+		pomdp.setMecThreshold(mecThreshold);
+		pomdp.setRplThreshold(rplThreshold);
 		
 		int numTimesteps = 500;
 		// set alpha-vectors here (in future can have in POMDP file)
