@@ -3,6 +3,10 @@
 Ablation study runner for L4Project POMDP experiments.
 Runs multiple configs (lambda, p_c, lookback, NFR thresholds, disaster scenarios),
 3 seeds (222, 223, 224), 500 timesteps each; aggregates MEC/RPL stats and produces CSVs and figures.
+
+By default, re-running `run` skips configurations that already have valid output
+(MECSattimestep.txt and RPLSattimestep.txt), so you can resume after a crash or stop.
+Use --overwrite to re-run all configurations from the beginning.
 """
 from __future__ import annotations
 
@@ -28,6 +32,14 @@ NUM_TIMESTEPS = 500  # fixed in SolvePOMDP.java
 STAT_COLS = ["mean", "median", "Q1", "Q3", "lower_fence", "upper_fence"]
 # Three principle surprise configs: MIS, CC, and no surprise (useSurpriseUpdating=false)
 SURPRISE_OPTIONS = ["MIS", "CC", "no_surprise"]
+
+# Fail fast if misconfigured (empty surprise would create flat output dirs under abl_id/)
+for s in SURPRISE_OPTIONS:
+    if not s or not str(s).strip():
+        raise ValueError(
+            "SURPRISE_OPTIONS may not contain empty or whitespace-only entries; "
+            f"got {repr(SURPRISE_OPTIONS)}"
+        )
 
 
 def project_root() -> Path:
@@ -218,6 +230,11 @@ def aggregate_run_stats(run_dir: Path) -> dict[str, Any] | None:
     return out
 
 
+def is_run_complete(run_dir: Path) -> bool:
+    """Return True iff the run directory has valid MECSattimestep.txt and RPLSattimestep.txt (same as summary building)."""
+    return aggregate_run_stats(run_dir) is not None
+
+
 # --- Ablation definitions (factor levels; fixed baseline as in plan) ---
 ABL1_LAMBDA = {
     "id": "abl1_lambda",
@@ -283,8 +300,9 @@ def run_single_ablation(
     seeds: list[int],
     cp_sep: str,
     quick: bool,
+    overwrite: bool = False,
 ) -> list[Path]:
-    """Launch all runs for one ablation; return list of run output directories."""
+    """Launch all runs for one ablation; return list of run output directories. Skips runs that already have valid output unless overwrite=True."""
     results_base = root / "output_dir" / "results"
     abl_id = abl["id"]
     run_dirs: list[Path] = []
@@ -296,6 +314,11 @@ def run_single_ablation(
 
     for level in levels:
         for surprise in SURPRISE_OPTIONS:
+            if not surprise or not str(surprise).strip():
+                raise ValueError(
+                    "surprise must be non-empty (SURPRISE_OPTIONS may not contain '' or whitespace); "
+                    f"got {repr(surprise)}"
+                )
             for seed in seed_list:
                 if abl_id == "abl1_lambda":
                     run_id = run_id_for_abl1(level, seed)
@@ -347,9 +370,13 @@ def run_single_ablation(
                         link_failure_links=links,
                         link_recovery_timestep=rec_ts if rec_ts and rec_ts >= 0 else None,
                     )
+                run_dir = root / "output_dir" / "results" / abl_id / surprise / run_id
+                if not overwrite and is_run_complete(run_dir):
+                    logger.info("Skipping (already complete): {} / {} / {}", abl_id, surprise, run_id)
+                    run_dirs.append(run_dir)
+                    continue
                 (results_base / abl_id / surprise / run_id).mkdir(parents=True, exist_ok=True)
                 ok = run_java_solver(root, config_path, cp_sep)
-                run_dir = root / "output_dir" / "results" / abl_id / surprise / run_id
                 if ok:
                     run_dirs.append(run_dir)
                 else:
@@ -368,6 +395,11 @@ def build_summary_per_ablation(root: Path, abl: dict, seeds: list[int]) -> pd.Da
     fixed = abl.get("fixed", {})
     for level in levels:
         for surprise in SURPRISE_OPTIONS:
+            if not surprise or not str(surprise).strip():
+                raise ValueError(
+                    "surprise must be non-empty (SURPRISE_OPTIONS may not contain '' or whitespace); "
+                    f"got {repr(surprise)}"
+                )
             surprise_dir = results_base / surprise
             if not surprise_dir.exists():
                 continue
@@ -423,7 +455,7 @@ def main_run(args: argparse.Namespace, root: Path, cp_sep: str) -> None:
     (root / "output_dir" / "results").mkdir(parents=True, exist_ok=True)
     for abl in ablations:
         logger.info("Running ablation {} ...", abl["id"])
-        run_single_ablation(root, abl, seeds, cp_sep, args.quick)
+        run_single_ablation(root, abl, seeds, cp_sep, args.quick, overwrite=args.overwrite)
     logger.info("Runs done. Building summary CSVs...")
     for abl in ablations:
         write_summary_csvs(root, abl, seeds)
@@ -542,6 +574,10 @@ Each run subdirectory contains the usual solver outputs: `MECSattimestep.txt`, `
 
 For MEC and RPL (from the 500-timestep series per run): **mean**, **median**, **Q1**, **Q3**, **lower_fence** (Q1 − 1.5×IQR), **upper_fence** (Q3 + 1.5×IQR).
 
+## Resume / skip-existing
+
+Re-running `run` skips configurations that already have valid `MECSattimestep.txt` and `RPLSattimestep.txt` in their run directory, so you can resume after a crash or manual stop without re-running completed jobs. Use **`--overwrite`** to run all configurations from the beginning (overwriting existing output).
+
 ## Reproducibility
 
 - **Timesteps:** 500 per run (fixed in SolvePOMDP.java).
@@ -551,7 +587,9 @@ For MEC and RPL (from the 500-timestep series per run): **mean**, **median**, **
 ## Usage
 
 From project root (L4Project):  
-`python scripts/run_ablation.py run` — run all ablations, then write summaries and figures.  
+`python scripts/run_ablation.py run` — run all ablations (skip existing), then write summaries and figures.  
+`python scripts/run_ablation.py run --overwrite` — re-run all configurations from the beginning.  
+`python scripts/run_ablation.py run --no-plots` — skip generating figures after runs (faster; run `plots` later).  
 `python scripts/run_ablation.py run --quick` — one seed, two levels per ablation (faster).  
 `python scripts/run_ablation.py run --ablations abl1_lambda abl2_pc` — run only those ablations.  
 `python scripts/run_ablation.py summary` — aggregate existing run dirs and write CSVs only.  
@@ -573,19 +611,37 @@ def main() -> None:
         sp = sub.add_parser(name)
         sp.add_argument("--ablations", nargs="+", dest="ablations", help="Limit to these ablation IDs")
         sp.add_argument("--quick", action="store_true", dest="quick", help="Quick mode")
+        if name == "run":
+            sp.add_argument(
+                "--overwrite",
+                action="store_true",
+                dest="overwrite",
+                help="Re-run all configurations even if output already exists (default: skip existing)",
+            )
+            sp.add_argument(
+                "--no-plots",
+                action="store_true",
+                dest="no_plots",
+                help="Skip generating figures after runs (faster; you can run 'plots' later)",
+            )
     args = parser.parse_args()
     # Copy subparser-only args to namespace if missing (when no subcommand given)
     if getattr(args, "ablations", None) is None:
         args.ablations = None
     if getattr(args, "quick", None) is None:
         args.quick = False
+    if getattr(args, "overwrite", None) is None:
+        args.overwrite = False
+    if getattr(args, "no_plots", None) is None:
+        args.no_plots = False
 
     root = project_root()
     cp_sep = ";" if os.name == "nt" else ":"
 
     if args.cmd == "run":
         main_run(args, root, cp_sep)
-        main_plots(args, root)
+        if not args.no_plots:
+            main_plots(args, root)
         main_readme(args, root)
     elif args.cmd == "summary":
         main_summary_only(args, root)
@@ -596,7 +652,8 @@ def main() -> None:
     else:
         # Default: run full pipeline
         main_run(args, root, cp_sep)
-        main_plots(args, root)
+        if not args.no_plots:
+            main_plots(args, root)
         main_readme(args, root)
 
 
