@@ -156,13 +156,14 @@ def write_run_config(
     return config_path
 
 
-def run_java_solver(root: Path, config_path: Path, cp_sep: str) -> bool:
+def run_java_solver(root: Path, config_path: Path, cp_sep: str, no_plots: bool) -> bool:
     """Run main.SolvePOMDP with -DconfigPath=config_path. Returns True on success."""
     # Include . so log4j2.xml in project root is found
     cp = f".{cp_sep}bin{cp_sep}libraries/*"
     cmd = [
         "java",
         f"-DconfigPath={config_path.resolve()}",
+        f"-DnoPlots={no_plots}",
         "-cp", cp,
         "main.SolvePOMDP",
     ]
@@ -300,6 +301,7 @@ def run_single_ablation(
     seeds: list[int],
     cp_sep: str,
     quick: bool,
+    no_plots: bool,
     overwrite: bool = False,
 ) -> list[Path]:
     """Launch all runs for one ablation; return list of run output directories. Skips runs that already have valid output unless overwrite=True."""
@@ -376,7 +378,7 @@ def run_single_ablation(
                     run_dirs.append(run_dir)
                     continue
                 (results_base / abl_id / surprise / run_id).mkdir(parents=True, exist_ok=True)
-                ok = run_java_solver(root, config_path, cp_sep)
+                ok = run_java_solver(root, config_path, cp_sep, no_plots)
                 if ok:
                     run_dirs.append(run_dir)
                 else:
@@ -426,7 +428,9 @@ def build_summary_per_ablation(root: Path, abl: dict, seeds: list[int]) -> pd.Da
 
 
 def write_summary_csvs(root: Path, abl: dict, seeds: list[int]) -> None:
-    """Write summary_abl*_*.csv and summary_abl*_*_avg.csv for one ablation."""
+    """Write summary_abl*_*.csv and summary_abl*_*_avg.csv for one ablation.
+    Per-run CSV: one row per (level, surprise, seed). Averaged CSV: one row per (level, surprise)
+    with statistics averaged across the three seeds."""
     df = build_summary_per_ablation(root, abl, seeds)
     if df is None or df.empty:
         return
@@ -435,16 +439,18 @@ def write_summary_csvs(root: Path, abl: dict, seeds: list[int]) -> None:
     path_per_run = results_dir / f"summary_{abl_id}.csv"
     df.to_csv(path_per_run, index=False)
 
-    # Averaged over seeds; group by level and surprise
+    # Averaged over seeds; group by level and surprise (one row per independent variable, surprise measure)
     group_cols = ["level", "surprise"]
     if not all(c in df.columns for c in group_cols):
         return
     avg_df = df.groupby(group_cols, as_index=False).agg("mean")
+    if "seed" in avg_df.columns:
+        avg_df = avg_df.drop(columns=["seed"])
     avg_path = results_dir / f"summary_{abl_id}_avg.csv"
     avg_df.to_csv(avg_path, index=False)
 
 
-def main_run(args: argparse.Namespace, root: Path, cp_sep: str) -> None:
+def main_run(args: argparse.Namespace, root: Path, cp_sep: str, no_plots: bool) -> None:
     """Execute runs for selected ablations."""
     seeds = SEEDS if not args.quick else [222]
     ablations = [
@@ -455,7 +461,7 @@ def main_run(args: argparse.Namespace, root: Path, cp_sep: str) -> None:
     (root / "output_dir" / "results").mkdir(parents=True, exist_ok=True)
     for abl in ablations:
         logger.info("Running ablation {} ...", abl["id"])
-        run_single_ablation(root, abl, seeds, cp_sep, args.quick, overwrite=args.overwrite)
+        run_single_ablation(root, abl, seeds, cp_sep, args.quick, no_plots, overwrite=args.overwrite)
     logger.info("Runs done. Building summary CSVs...")
     for abl in ablations:
         write_summary_csvs(root, abl, seeds)
@@ -566,8 +572,8 @@ Each run subdirectory contains the usual solver outputs: `MECSattimestep.txt`, `
 
 ## Summary CSVs
 
-- **summary_abl1_lambda.csv** — One row per (lambda, seed, surprise): level, seed, surprise, mean_MEC, median_MEC, Q1_MEC, Q3_MEC, lower_fence_MEC, upper_fence_MEC, and same for RPL.
-- **summary_abl1_lambda_avg.csv** — Same factors, averaged over seeds 222, 223, 224; one row per (level, surprise).
+- **summary_abl1_lambda.csv** — One row per (level, surprise, seed): level, seed, surprise, mean_MEC, median_MEC, Q1_MEC, Q3_MEC, lower_fence_MEC, upper_fence_MEC, and same for RPL.
+- **summary_abl1_lambda_avg.csv** — One row per (level, surprise); metrics averaged across seeds 222, 223, 224 for each (independent variable, surprise measure).
 - Similarly: **summary_abl2_pc**, **summary_abl3_lookback**, **summary_abl4_nfr**, **summary_abl5_disaster** (each with a **surprise** column).
 
 ## Metrics
@@ -634,12 +640,14 @@ def main() -> None:
         args.overwrite = False
     if getattr(args, "no_plots", None) is None:
         args.no_plots = False
+    else:
+        args.no_plots = True
 
     root = project_root()
     cp_sep = ";" if os.name == "nt" else ":"
 
     if args.cmd == "run":
-        main_run(args, root, cp_sep)
+        main_run(args, root, cp_sep, args.no_plots)
         if not args.no_plots:
             main_plots(args, root)
         main_readme(args, root)

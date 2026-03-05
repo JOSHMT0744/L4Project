@@ -975,11 +975,15 @@ public class SolvePOMDP {
 		double totalTimeSeconds = totalTime / 1000.0;
 		log.info("Total execution time: {} seconds", String.format("%.2f", totalTimeSeconds));
 
-		try {
-			runPython();
-		} catch (Exception e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
+		String noPlotsProp = System.getProperty("noPlots");
+		boolean noPlots = noPlotsProp != null && Boolean.parseBoolean(noPlotsProp);
+		if (!noPlots) {
+			try {
+				runPython();
+			} catch (Exception e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
 		}
 	}
 }
