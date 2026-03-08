@@ -1,4 +1,5 @@
 from functools import reduce
+import argparse
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
@@ -1332,35 +1333,35 @@ def loadMoteMetrics(folder_path):
     except Exception as e:
         raise ValueError(f"Error loading mote_metrics.txt: {e}")
 
-def getData():
+def _default_data_dir():
+    """Resolve default output directory for chart data (when --output-dir not provided)."""
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    if os.path.basename(script_dir) == "L4Project":
+        return os.path.join(script_dir, "output_dir")
+    l4project_output = os.path.join(script_dir, "L4Project", "output_dir")
+    if os.path.exists(l4project_output):
+        return l4project_output
+    return os.path.abspath("output_dir")
+
+
+def getData(folder_path=None):
     """    
-    Reads data from a file and returns it as a dataframe
-    :param filename: the file to read from
-    :param perMote: whether the outputs are per mote, or over whole system
+    Reads data from a file and returns it as a dataframe.
+    :param folder_path: Directory containing MECSattimestep.txt, RPLSattimestep.txt, etc.
+                       If None, uses default (output_dir relative to script or cwd).
     """
+    if folder_path is None:
+        folder_path = _default_data_dir()
+    else:
+        folder_path = os.path.abspath(folder_path)
     logger.info("Stage: Resolving output directory for chart data")
     dfs_2 = []
     dfs_3 = []
-    # Determine the correct output directory path
-    # The script may be run from workspace root or from L4Project/ directory
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    # If script is in L4Project/, use output_dir relative to script
-    # If script is elsewhere, try L4Project/output_dir
-    if os.path.basename(script_dir) == "L4Project":
-        folder_path = os.path.join(script_dir, "output_dir")
-    else:
-        # Try L4Project/output_dir relative to script location
-        l4project_output = os.path.join(script_dir, "L4Project", "output_dir")
-        if os.path.exists(l4project_output):
-            folder_path = l4project_output
-        else:
-            # Fallback: try output_dir in current directory
-            folder_path = "output_dir"
     
     # Verify the folder exists
     if not os.path.exists(folder_path):
-        raise FileNotFoundError(f"Output directory not found: {folder_path}. Tried: {script_dir}/output_dir, {script_dir}/L4Project/output_dir, ./output_dir")
-    logger.info("Stage: Scanning output_dir for CSV/txt files (timestep, MEC, RPL, surprise, gamma, etc.)")
+        raise FileNotFoundError(f"Output directory not found: {folder_path}")
+    logger.info("Stage: Scanning {} for CSV/txt files (timestep, MEC, RPL, surprise, gamma, etc.)", folder_path)
     for filename in os.listdir(folder_path):
         file_path = os.path.join(folder_path, filename)
         if os.path.isfile(file_path):
@@ -1453,28 +1454,27 @@ def kill_processes_on_port(port=8050):
     except Exception as e:
         print(f"Warning: Error checking port {port}: {e}. Proceeding anyway...")
 
-def run():
+def run(data_dir=None):
+    """
+    Run the full chart generation pipeline.
+    :param data_dir: Directory containing solver output (MECSattimestep.txt, gamma.txt, mote_metrics.txt, etc.).
+                     If None, uses default (output_dir relative to script or cwd). When invoked by SolvePOMDP.java,
+                     this is set from solver.config's outputDirectory.
+    """
+    if data_dir is not None:
+        data_dir = os.path.abspath(data_dir)
+        logger.info("Stage: Using data directory from config: {}", data_dir)
     logger.info("Stage: Chart generation pipeline started")
     logger.info("Stage: Loading main chart data (MECSattimestep, RPLSattimestep, gamma, surprise, etc.)")
-    df_all = getData()
+    df_all = getData(data_dir)
     print(df_all.head(30))
 
     createCharts(df_all)
     
     # Load and create mote metrics charts
     try:
-        logger.info("Stage: Resolving output directory for mote metrics")
-        # Determine the correct output directory path
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        if os.path.basename(script_dir) == "L4Project":
-            folder_path = os.path.join(script_dir, "output_dir")
-        else:
-            l4project_output = os.path.join(script_dir, "L4Project", "output_dir")
-            if os.path.exists(l4project_output):
-                folder_path = l4project_output
-            else:
-                folder_path = "output_dir"
-        
+        folder_path = data_dir if data_dir is not None else _default_data_dir()
+        logger.info("Stage: Loading mote metrics from {}", folder_path)
         df_mote_metrics = loadMoteMetrics(folder_path)
         print(f"\nLoaded {len(df_mote_metrics)} rows of mote metrics data")
         print(f"Timestep range: {df_mote_metrics['timestep'].min()} to {df_mote_metrics['timestep'].max()}")
@@ -1504,4 +1504,14 @@ def run():
         traceback.print_exc()
 
 if __name__ == "__main__":
-    run()
+    parser = argparse.ArgumentParser(description="Generate charts from solver output (MEC, RPL, surprise, gamma, mote metrics).")
+    parser.add_argument(
+        "--output-dir",
+        type=str,
+        default=None,
+        metavar="PATH",
+        help="Directory containing solver output (MECSattimestep.txt, RPLSattimestep.txt, gamma.txt, mote_metrics.txt, etc.). "
+             "Defaults to output_dir relative to script. When called by SolvePOMDP.java, this is set from solver.config outputDirectory.",
+    )
+    args = parser.parse_args()
+    run(data_dir=args.output_dir)

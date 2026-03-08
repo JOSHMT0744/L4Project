@@ -114,6 +114,11 @@ public class SolvePOMDP {
 		return null;
 	}
 	
+	/** Returns the configured output directory (from solver.config outputDirectory). Used when invoking createCharts.py. */
+	public String getOutputDir() {
+		return sp.getOutputDir();
+	}
+
 	/**
 	 * Find createCharts.py script
 	 */
@@ -131,7 +136,12 @@ public class SolvePOMDP {
 		return null;
 	}
 	
-	public static void runPython() throws Exception {
+	/**
+	 * Run createCharts.py to generate graphs from the solver output.
+	 * @param outputDirForCharts Directory where the solver wrote output (MECSattimestep.txt, gamma.txt, etc.);
+	 *                           should match solver.config outputDirectory. Passed to createCharts.py as --output-dir.
+	 */
+	public static void runPython(String outputDirForCharts) throws Exception {
 		// Try to find Python executable in virtual environment
 		String pythonPath = findPythonExecutable();
 		if (pythonPath == null) {
@@ -146,7 +156,10 @@ public class SolvePOMDP {
 			return;
 		}
 		
-		ProcessBuilder pb = new ProcessBuilder(pythonPath, chartsScript);
+		// Resolve output dir to absolute path so createCharts.py reads from the correct run directory (e.g. init_runs/s222)
+		String outputDirAbs = new File(outputDirForCharts).getAbsolutePath();
+		log.info("Running createCharts.py with --output-dir {}", outputDirAbs);
+		ProcessBuilder pb = new ProcessBuilder(pythonPath, chartsScript, "--output-dir", outputDirAbs);
 		pb.redirectErrorStream(true);
 		Process p = pb.start();
 		
@@ -979,7 +992,7 @@ public class SolvePOMDP {
 		boolean noPlots = noPlotsProp != null && Boolean.parseBoolean(noPlotsProp);
 		if (!noPlots) {
 			try {
-				runPython();
+				runPython(ps.getOutputDir());
 			} catch (Exception e) {
 				// TODO Auto-generated catch block
 				e.printStackTrace();
