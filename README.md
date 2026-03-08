@@ -122,7 +122,7 @@ These hyperparameters control the learning and adaptation behavior:
 |--------|------|---------|
 | `runSeed` | Base random seed for solver, mote order, and policy (vary for repeated runs, e.g. 222, 223, ...) | `222` |
 | `surpriseMeasureForGamma` | Surprise measure for varSMiLE gamma: `CC` (Confidence-Corrected), `BF` (Bayes Factor), or `MIS` (Mutual Information Surprise) | `MIS` |
-| `p_c` | Probability of change in (0,1) for varSMiLE gamma; controls `m = p_c/(1-p_c)` | `0.5` |
+| `p_c` | Probability of change in (0,1) for SMiLE gamma; controls `m = p_c/(1-p_c)` | `0.5` |
 | `useSurpriseUpdating` | `true` = varSMiLE (surprise-weighted) updates; `false` = classic Bayesian (Dirichlet +1 only) | `true` |
 | `lookback` | Lookback period (m) for MIS calculation. Number of timesteps to look back when computing `MIS = MI[current] - MI[current - lookback]` | `4` |
 

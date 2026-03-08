@@ -342,7 +342,7 @@ public class DeltaIOTConnector {
 		String fullPath = filename.startsWith(File.separator) || (filename.length() > 1 && filename.charAt(1) == ':') 
 			? filename : new File(outputDirectory, filename).getPath();
 		try (BufferedWriter writer = new BufferedWriter(new FileWriter(fullPath, true))) {
-            writer.write(Integer.toString(moteNumber)+" "+Integerng(timestep)+" "+Double.toString(variable));
+            writer.write(Integer.toString(moteNumber)+" "+Integer.toString(timestep)+" "+Double.toString(variable));
             writer.newLine(); // adds a newline
         } catch (IOException e) {
             e.printStackTrace();

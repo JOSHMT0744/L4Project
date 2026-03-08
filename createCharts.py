@@ -10,6 +10,11 @@ import dash
 from dash import dcc, html, Input, Output
 from loguru import logger
 
+# Configure loguru: clear default, add stderr with stage-friendly format
+logger.remove()
+logger.add(sys.stderr, level="INFO", format="<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | <level>{message}</level>")
+
+
 def satisfactionViolins(df):
     fig = make_subplots(
         rows=1, 
@@ -1320,7 +1325,7 @@ def getData():
     :param filename: the file to read from
     :param perMote: whether the outputs are per mote, or over whole system
     """
-
+    logger.info("Stage: Resolving output directory for chart data")
     dfs_2 = []
     dfs_3 = []
     # Determine the correct output directory path
@@ -1342,7 +1347,7 @@ def getData():
     # Verify the folder exists
     if not os.path.exists(folder_path):
         raise FileNotFoundError(f"Output directory not found: {folder_path}. Tried: {script_dir}/output_dir, {script_dir}/L4Project/output_dir, ./output_dir")
-    
+    logger.info("Stage: Scanning output_dir for CSV/txt files (timestep, MEC, RPL, surprise, gamma, etc.)")
     for filename in os.listdir(folder_path):
         file_path = os.path.join(folder_path, filename)
         if os.path.isfile(file_path):
@@ -1389,7 +1394,7 @@ def getData():
     dfs_all_surprise = dfs_all_surprise.drop(columns=["moteid"])
 
     dfs_all = reduce(lambda df, new_df: pd.merge(df, new_df, on="timestep"), dfs_2) if dfs_2 else pd.DataFrame()
-    
+    logger.info("Stage: Merged timestep and per-mote data into single dataframe ({} rows)", len(dfs_all.merge(dfs_all_surprise, on="timestep")))
     return dfs_all.merge(dfs_all_surprise, on="timestep")
 
 def kill_processes_on_port(port=8050):
