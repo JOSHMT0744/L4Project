@@ -1036,6 +1036,7 @@ def createInteractiveMoteMetricsApp(df_mote_metrics):
     :param df_mote_metrics: DataFrame with mote metrics
     :return: Dash app instance
     """
+    logger.info("Stage: Creating interactive Dash app (mote metrics: SNR, power, distribution)")
     # Debug: Print what data we're receiving
     print(f"\n[DEBUG] createInteractiveMoteMetricsApp called with:")
     print(f"  DataFrame shape: {df_mote_metrics.shape}")
@@ -1082,6 +1083,7 @@ def createInteractiveMoteMetricsApp(df_mote_metrics):
         
     # CRITICAL: Generate initial figures fresh to ensure correct data from start
     # The callback will also regenerate them on any filter change
+    logger.info("Stage: Building initial SNR, Power, and Distribution figures for dashboard")
     initial_snr_fig, initial_power_fig, initial_dist_fig = generateFilteredPlots(df_copy, default_agg_mode, default_motes, default_links)
     
     # Debug: Check what timesteps are in the initial figures' traces
@@ -1226,45 +1228,56 @@ def createMoteMetricsCharts(df_mote_metrics):
     
     :param df_mote_metrics: DataFrame with mote metrics
     """
-    logger.info("Creating mote metrics visualizations...")
-    
+    logger.info("Stage: Creating static mote metrics visualizations")
     # Time series charts
+    logger.info("Stage: Building mote metrics time-series chart")
     time_series_fig = moteMetricsTimeSeries(df_mote_metrics)
     time_series_fig.show()
     
     # Distribution charts
+    logger.info("Stage: Building mote metrics distribution chart")
     distribution_fig = moteMetricsDistribution(df_mote_metrics)
     distribution_fig.show()
     
     # Heatmap charts
+    logger.info("Stage: Building mote metrics heatmap chart")
     heatmap_fig = moteMetricsHeatmap(df_mote_metrics)
     heatmap_fig.show()
     
     # Trajectory charts
+    logger.info("Stage: Building mote metrics trajectory chart")
     trajectory_fig = moteMetricsTrajectories(df_mote_metrics)
     trajectory_fig.show()
+    logger.info("Stage: Static mote metrics charts complete")
 
 def createCharts(df):
+    logger.info("Stage: Starting main chart generation (MEC/RPL, surprise, gamma, MIS)")
     # 1. Linechart for mean MIS over time (with error bounds)
+    logger.info("Stage: Building MIS chart (mean MIS over time with bounds)")
     mis_fig = misChart(df)
     mis_fig.show()
 
     # 2. Linechart for mean gamma over time
+    logger.info("Stage: Building gamma chart (mean gamma over time)")
     gamma_fig = gammaChart(df)
     gamma_fig.show()
 
+    logger.info("Stage: Building surprise chart (BF, CC, MIS over time)")
     surprises_fig = surpriseChart(df)
     surprises_fig.show()
 
+    logger.info("Stage: Building normalized surprise chart")
     surprises_norm_fig = surpriseChartNormalized(df)
     surprises_norm_fig.show()
 
+    logger.info("Stage: Building MEC/RPL satisfaction time-series plots")
     satisfaction_fig = satisfactionPlots(df = df.filter(items=["timestep", "mecsattimestep", "rplsattimestep"]))
     satisfaction_fig.show()
 
+    logger.info("Stage: Building MEC/RPL satisfaction violin distributions")
     satisfaction_violins_fig = satisfactionViolins(df = df.filter(items=["timestep", "mecsattimestep", "rplsattimestep"]))
-    #print(satisfaction_violins_fig)
     satisfaction_violins_fig.show()
+    logger.info("Stage: Main chart generation complete")
 
 
 def loadMoteMetrics(folder_path):
@@ -1275,7 +1288,7 @@ def loadMoteMetrics(folder_path):
     :return: DataFrame with columns: timestep, moteId, linkIndex, source, dest, snr, power, distribution, sf
     """
     file_path = os.path.join(folder_path, "mote_metrics.txt")
-    
+    logger.info("Stage: Loading mote_metrics.txt from {}", folder_path)
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"mote_metrics.txt not found in {folder_path}")
     
@@ -1309,7 +1322,7 @@ def loadMoteMetrics(folder_path):
         
         # Remove rows with NaN in critical columns
         df = df.dropna(subset=['timestep', 'moteId', 'snr', 'power', 'distribution', 'sf'])
-        
+        logger.info("Stage: Loaded and validated mote_metrics ({} rows)", len(df))
         return df
         
     except pd.errors.EmptyDataError:
@@ -1441,6 +1454,8 @@ def kill_processes_on_port(port=8050):
         print(f"Warning: Error checking port {port}: {e}. Proceeding anyway...")
 
 def run():
+    logger.info("Stage: Chart generation pipeline started")
+    logger.info("Stage: Loading main chart data (MECSattimestep, RPLSattimestep, gamma, surprise, etc.)")
     df_all = getData()
     print(df_all.head(30))
 
@@ -1448,6 +1463,7 @@ def run():
     
     # Load and create mote metrics charts
     try:
+        logger.info("Stage: Resolving output directory for mote metrics")
         # Determine the correct output directory path
         script_dir = os.path.dirname(os.path.abspath(__file__))
         if os.path.basename(script_dir) == "L4Project":
@@ -1466,16 +1482,14 @@ def run():
         print(df_mote_metrics.head(30))
         
         # Create static charts (for backward compatibility)
-        logger.info("Creating static mote metrics visualizations...")
+        logger.info("Stage: Preparing interactive mote metrics Dash app")
         #createMoteMetricsCharts(df_mote_metrics)
         
         # Create and launch interactive Dash app
-        print("\nLaunching interactive Dash app...")
-        
-        # Kill any existing processes on port 8050 before starting
+        logger.info("Stage: Checking port 8050 and killing any existing process")
         kill_processes_on_port(8050)
         
-        logger.info("Dash app: filter by motes/links; Ctrl+C to stop.")
+        logger.info("Stage: Launching interactive Dash app (mote metrics: filter by motes/links); Ctrl+C to stop")
         
         app = createInteractiveMoteMetricsApp(df_mote_metrics)
         # use_reloader=False: with debug=True the Werkzeug reloader would run this script
