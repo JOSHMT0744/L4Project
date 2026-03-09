@@ -1,6 +1,6 @@
 # Surprise-based BA-POMDP: Entropy-Regularized Value Iteration with Adaptive Learning
 
-POMDP-based adaptation for IoT networks: entropy-regularized solvers (ERPerseus, ERPBVI) plus **varSMiLE** (surprise-driven learning of T,O) and **MIS** (Mutual Information Surprise) for adaptive gamma. Goals: minimize energy (MEC) and packet loss (RPL).
+POMDP-based adaptation for IoT networks: entropy-regularized solvers (ERPerseus, ERPBVI) plus **varSMiLE** (surprise-driven learning of Transition & Observation transition beliefs) and **MIS** (Mutual Information Surprise) for adaptive gamma. Goals: minimize energy (MEC) and packet loss (RPL).
 
 ## Contents
 
