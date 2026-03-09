@@ -20,7 +20,7 @@ def satisfactionViolins(df):
     fig = make_subplots(
         rows=1, 
         cols=2, 
-        subplot_titles=("MEC Satisfaction Distribution", "RPL Satisfaction Distribution")
+        subplot_titles=("MEC Satisfaction Distribution (Coulombs)", "RPL Satisfaction Distribution (%)")
         )
 
     fig.add_trace(
@@ -29,7 +29,9 @@ def satisfactionViolins(df):
             name="MEC Satisfaction",
             box_visible=True,
             meanline_visible=True,
-            line_color="black"
+            line_color="black",
+            fillcolor="lightseagreen",
+            opacity=0.6
         ),
         row=1,
         col=1
@@ -37,11 +39,13 @@ def satisfactionViolins(df):
 
     fig.add_trace(
         go.Violin(
-            y=df["rplsattimestep"],
+            y=df["rplsattimestep"] * 100,
             name="RPL Satisfaction",
             box_visible=True,
             meanline_visible=True,
-            line_color="black"
+            line_color="black",
+            fillcolor="orange",
+            opacity=0.6
         ),
         row=1,
         col=2,
@@ -50,7 +54,11 @@ def satisfactionViolins(df):
     fig.update_layout(yaxis_zeroline=False)
     return fig
 
-def satisfactionPlots(df):
+def satisfactionPlots(df, mec_threshold=20.0, rpl_threshold=0.2):
+    """
+    MEC/RPL satisfaction time-series with horizontal threshold lines.
+    Thresholds come from solver.config (mecThreshold, rplThreshold) for the run.
+    """
     fig = make_subplots(rows=2, cols=1)
 
     fig.add_trace(
@@ -58,7 +66,8 @@ def satisfactionPlots(df):
             x=df["timestep"],
             y=df["mecsattimestep"],
             mode="lines",
-            name="MEC Satisfaction",
+            name="MEC Satisfaction (Coulombs)",
+            line=dict(color="lightseagreen"),
         ),
         row=1,
         col=1,
@@ -67,9 +76,10 @@ def satisfactionPlots(df):
     fig.add_trace(
         go.Scatter(
             x=df["timestep"],
-            y=df["rplsattimestep"],
+            y=df["rplsattimestep"] * 100,
             mode="lines",
-            name="RPL Satisfaction",
+            name="RPL Satisfaction (%)",
+            line=dict(color="orange"),
         ),
         row=2,
         col=1,
@@ -79,9 +89,9 @@ def satisfactionPlots(df):
         type="line",
         x0=df["timestep"].min(),
         x1=df["timestep"].max(),
-        y0=20,           # horizontal line value
-        y1=20,
-        xref="x1",        # subplot 1
+        y0=mec_threshold,
+        y1=mec_threshold,
+        xref="x1",
         yref="y1",
         line=dict(color="Red"),
     )
@@ -90,15 +100,19 @@ def satisfactionPlots(df):
         type="line",
         x0=df["timestep"].min(),
         x1=df["timestep"].max(),
-        y0=0.2,
-        y1=0.2,
-        xref="x2",        # subplot 2
+        y0=rpl_threshold * 100,
+        y1=rpl_threshold * 100,
+        xref="x2",
         yref="y2",
         line=dict(color="Red"),
     )
 
-    fig.update_yaxes(range=[0, df["mecsattimestep"].max() + 20], row=1, col=1)
-    fig.update_yaxes(range=[0, df["rplsattimestep"].max() + 0.2], row=2, col=1)
+    fig.update_yaxes(range=[0, df["mecsattimestep"].max() + mec_threshold], row=1, col=1)
+    fig.update_yaxes(range=[0, df["rplsattimestep"].max() * 100 + rpl_threshold * 100], row=2, col=1)
+    fig.update_xaxes(title_text="Timestep", row=1, col=1)
+    fig.update_xaxes(title_text="Timestep", row=2, col=1)
+    fig.update_yaxes(title_text="MEC (Coulombs)", row=1, col=1)
+    fig.update_yaxes(title_text="RPL (%)", row=2, col=1)
 
     return fig
 
@@ -1251,7 +1265,11 @@ def createMoteMetricsCharts(df_mote_metrics):
     trajectory_fig.show()
     logger.info("Stage: Static mote metrics charts complete")
 
-def createCharts(df):
+def createCharts(df, mec_threshold=20.0, rpl_threshold=0.2):
+    """
+    Build and display all main charts. mec_threshold and rpl_threshold should match
+    the config used for the run (solver.config mecThreshold, rplThreshold).
+    """
     logger.info("Stage: Starting main chart generation (MEC/RPL, surprise, gamma, MIS)")
     # 1. Linechart for mean MIS over time (with error bounds)
     logger.info("Stage: Building MIS chart (mean MIS over time with bounds)")
@@ -1271,8 +1289,12 @@ def createCharts(df):
     surprises_norm_fig = surpriseChartNormalized(df)
     surprises_norm_fig.show()
 
-    logger.info("Stage: Building MEC/RPL satisfaction time-series plots")
-    satisfaction_fig = satisfactionPlots(df = df.filter(items=["timestep", "mecsattimestep", "rplsattimestep"]))
+    logger.info("Stage: Building MEC/RPL satisfaction time-series plots (mecThreshold={}, rplThreshold={})", mec_threshold, rpl_threshold)
+    satisfaction_fig = satisfactionPlots(
+        df.filter(items=["timestep", "mecsattimestep", "rplsattimestep"]),
+        mec_threshold=mec_threshold,
+        rpl_threshold=rpl_threshold,
+    )
     satisfaction_fig.show()
 
     logger.info("Stage: Building MEC/RPL satisfaction violin distributions")
@@ -1454,12 +1476,14 @@ def kill_processes_on_port(port=8050):
     except Exception as e:
         print(f"Warning: Error checking port {port}: {e}. Proceeding anyway...")
 
-def run(data_dir=None):
+def run(data_dir=None, mec_threshold=20.0, rpl_threshold=0.2):
     """
     Run the full chart generation pipeline.
     :param data_dir: Directory containing solver output (MECSattimestep.txt, gamma.txt, mote_metrics.txt, etc.).
                      If None, uses default (output_dir relative to script or cwd). When invoked by SolvePOMDP.java,
                      this is set from solver.config's outputDirectory.
+    :param mec_threshold: MEC threshold from solver.config (horizontal line and axis scaling). Default 20.
+    :param rpl_threshold: RPL threshold from solver.config (horizontal line and axis scaling). Default 0.2.
     """
     if data_dir is not None:
         data_dir = os.path.abspath(data_dir)
@@ -1469,7 +1493,7 @@ def run(data_dir=None):
     df_all = getData(data_dir)
     print(df_all.head(30))
 
-    createCharts(df_all)
+    createCharts(df_all, mec_threshold=mec_threshold, rpl_threshold=rpl_threshold)
     
     # Load and create mote metrics charts
     try:
@@ -1513,5 +1537,19 @@ if __name__ == "__main__":
         help="Directory containing solver output (MECSattimestep.txt, RPLSattimestep.txt, gamma.txt, mote_metrics.txt, etc.). "
              "Defaults to output_dir relative to script. When called by SolvePOMDP.java, this is set from solver.config outputDirectory.",
     )
+    parser.add_argument(
+        "--mec-threshold",
+        type=float,
+        default=20.0,
+        metavar="VALUE",
+        help="MEC threshold from solver.config (horizontal line on MEC satisfaction plot). Default 20.",
+    )
+    parser.add_argument(
+        "--rpl-threshold",
+        type=float,
+        default=0.2,
+        metavar="VALUE",
+        help="RPL threshold from solver.config (horizontal line on RPL satisfaction plot). Default 0.2.",
+    )
     args = parser.parse_args()
-    run(data_dir=args.output_dir)
+    run(data_dir=args.output_dir, mec_threshold=args.mec_threshold, rpl_threshold=args.rpl_threshold)

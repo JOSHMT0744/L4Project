@@ -119,6 +119,16 @@ public class SolvePOMDP {
 		return sp.getOutputDir();
 	}
 
+	/** Returns mecThreshold from solver.config (for createCharts.py MEC satisfaction plot). */
+	public double getMecThreshold() {
+		return mecThreshold;
+	}
+
+	/** Returns rplThreshold from solver.config (for createCharts.py RPL satisfaction plot). */
+	public double getRplThreshold() {
+		return rplThreshold;
+	}
+
 	/**
 	 * Find createCharts.py script
 	 */
@@ -140,8 +150,10 @@ public class SolvePOMDP {
 	 * Run createCharts.py to generate graphs from the solver output.
 	 * @param outputDirForCharts Directory where the solver wrote output (MECSattimestep.txt, gamma.txt, etc.);
 	 *                           should match solver.config outputDirectory. Passed to createCharts.py as --output-dir.
+	 * @param mecThreshold MEC threshold from solver.config (--mec-threshold).
+	 * @param rplThreshold RPL threshold from solver.config (--rpl-threshold).
 	 */
-	public static void runPython(String outputDirForCharts) throws Exception {
+	public static void runPython(String outputDirForCharts, double mecThreshold, double rplThreshold) throws Exception {
 		// Try to find Python executable in virtual environment
 		String pythonPath = findPythonExecutable();
 		if (pythonPath == null) {
@@ -158,8 +170,13 @@ public class SolvePOMDP {
 		
 		// Resolve output dir to absolute path so createCharts.py reads from the correct run directory (e.g. init_runs/s222)
 		String outputDirAbs = new File(outputDirForCharts).getAbsolutePath();
-		log.info("Running createCharts.py with --output-dir {}", outputDirAbs);
-		ProcessBuilder pb = new ProcessBuilder(pythonPath, chartsScript, "--output-dir", outputDirAbs);
+		log.info("Running createCharts.py with --output-dir {} --mec-threshold {} --rpl-threshold {}", outputDirAbs, mecThreshold, rplThreshold);
+		ProcessBuilder pb = new ProcessBuilder(
+			pythonPath, chartsScript,
+			"--output-dir", outputDirAbs,
+			"--mec-threshold", String.valueOf(mecThreshold),
+			"--rpl-threshold", String.valueOf(rplThreshold)
+		);
 		pb.redirectErrorStream(true);
 		Process p = pb.start();
 		
@@ -992,7 +1009,7 @@ public class SolvePOMDP {
 		boolean noPlots = noPlotsProp != null && Boolean.parseBoolean(noPlotsProp);
 		if (!noPlots) {
 			try {
-				runPython(ps.getOutputDir());
+				runPython(ps.getOutputDir(), ps.getMecThreshold(), ps.getRplThreshold());
 			} catch (Exception e) {
 				// TODO Auto-generated catch block
 				e.printStackTrace();
