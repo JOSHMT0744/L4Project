@@ -861,7 +861,7 @@ public class DeltaIOTConnector {
 				}
 
 		for (Mote mote : DeltaIOTConnector.motes) {
-			if(mote.getLinks().size() == 2) {
+			if(mote.getLinks().size() > 1) {
 				
 				left = mote.getLinks().get(0);
 				right = mote.getLinks().get(1);

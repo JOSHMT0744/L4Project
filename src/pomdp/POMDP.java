@@ -285,7 +285,7 @@ public class POMDP {
 		int currentRun = Math.max(1, requestedRun);
 
 		// Wait for QoS data to be ready before accessing it to prevent warnings
-		ArrayList<QoS> result = iot.QoSDataHelper.waitForQoSDataReady(currentRun, 20, 100);
+		ArrayList<QoS> result = iot.QoSDataHelper.waitForQoSDataReady(currentRun, 20, 200);
 		if (result == null || result.isEmpty()) {
 			log.warn("No QoS data for run {} (requested {}) in nextState(), using current state", currentRun, requestedRun);
 			// Return current state as fallback

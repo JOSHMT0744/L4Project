@@ -276,12 +276,14 @@ def surpriseChartNormalized(df):
         name="Mean MIS (Smoothed)",
         line=dict(width=2),
     ))
+    y_min = min(std_bf.min(), std_cc.min(), std_mis.min())
+    y_max = max(std_bf.max(), std_cc.max(), std_mis.max())
     fig.update_layout(
         title="Mean Surprise Over Time (Standardised for Comparison)",
         xaxis_title="Timestep",
         yaxis_title="Standardised Surprise (z-score)",
         legend_title="Surprise Types",
-        yaxis=dict(range=[-3, 3]),
+        yaxis=dict(range=[y_min, y_max]),
     )
     return fig
 
@@ -803,7 +805,6 @@ def generateFilteredPlots(df_filtered, aggregation_mode, selected_motes=None, se
     :return: Tuple of 3 Plotly figures: (snr_fig, power_fig, dist_fig)
     """
     if df_filtered.empty:
-        print(f"[DEBUG] generateFilteredPlots called - df_filtered is empty")
         # Return empty figures with message
         empty_fig = go.Figure()
         empty_fig.add_annotation(
@@ -842,11 +843,11 @@ def generateFilteredPlots(df_filtered, aggregation_mode, selected_motes=None, se
 
             # Debug: Check what timesteps are in df_mote before aggregation
             if df_mote.empty:
-                print(f"[DEBUG] Mote {mote_id} is empty")
+                logger.debug(f"Mote {mote_id} is empty")
                 continue
             actual_timesteps = sorted(df_mote['timestep'].unique().tolist())
             if len(actual_timesteps) > 10 or max(actual_timesteps) > 10:
-                print(f"[DEBUG] Mote {mote_id} has timesteps: {actual_timesteps[:20]}{'...' if len(actual_timesteps) > 20 else ''}, max: {max(actual_timesteps)}")
+                logger.debug(f"Mote {mote_id} has timesteps: {actual_timesteps[:20]}{'...' if len(actual_timesteps) > 20 else ''}, max: {max(actual_timesteps)}")
             
             df_agg = df_mote.groupby('timestep').agg({
                 'snr': 'mean',
@@ -854,9 +855,8 @@ def generateFilteredPlots(df_filtered, aggregation_mode, selected_motes=None, se
                 'distribution': 'mean'
             }).reset_index().sort_values('timestep')
             
-            # Debug: Print summary instead of full DataFrame to avoid encoding issues
             if not df_agg.empty:
-                print(f"[DEBUG] Mote {mote_id} aggregated - {len(df_agg)} timesteps, SNR range: {df_agg['snr'].min():.2f} to {df_agg['snr'].max():.2f}, Power range: {df_agg['power'].min()} to {df_agg['power'].max()}, Dist range: {df_agg['distribution'].min()} to {df_agg['distribution'].max()}")
+                logger.debug(f"Mote {mote_id} aggregated - {len(df_agg)} timesteps, SNR range: {df_agg['snr'].min():.2f} to {df_agg['snr'].max():.2f}, Power range: {df_agg['power'].min()} to {df_agg['power'].max()}, Dist range: {df_agg['distribution'].min()} to {df_agg['distribution'].max()}")
 
             if not df_agg.empty:
                 color = colors[idx % len(colors)]
@@ -900,7 +900,7 @@ def generateFilteredPlots(df_filtered, aggregation_mode, selected_motes=None, se
                 trace_count_snr += 1
                 trace_count_power += 1
                 
-                print(f"[DEBUG] Added SNR and Power traces for {label} (mote {mote_id})")
+                logger.debug(f"Added SNR and Power traces for {label} (mote {mote_id})")
                 
                 # Distribution - add to Distribution figure
                 dist_fig.add_trace(
@@ -916,15 +916,15 @@ def generateFilteredPlots(df_filtered, aggregation_mode, selected_motes=None, se
                     )
                 )
                 trace_count_dist += 1
-                print(f"[DEBUG] Added distribution trace for {label} (mote {mote_id})")
+                logger.debug(f"Added distribution trace for {label} (mote {mote_id})")
         
         # Verify all traces were added
-        print(f"[DEBUG] per_mote mode - Trace counts - SNR: {trace_count_snr}, Power: {trace_count_power}, Distribution: {trace_count_dist} for {len(unique_motes)} unique motes")
-        print(f"[DEBUG] Actual figure traces count - SNR: {len(snr_fig.data)}, Power: {len(power_fig.data)}, Distribution: {len(dist_fig.data)}")
+        logger.debug(f"per_mote mode - Trace counts - SNR: {trace_count_snr}, Power: {trace_count_power}, Distribution: {trace_count_dist} for {len(unique_motes)} unique motes")
+        logger.debug(f"Actual figure traces count - SNR: {len(snr_fig.data)}, Power: {len(power_fig.data)}, Distribution: {len(dist_fig.data)}")
     
     else:  # 'all_links' - show all selected links as separate traces
         unique_links = sorted(df_filtered['link_id'].unique())
-        print(f"[DEBUG] unique_links: {unique_links}")
+        logger.debug(f"unique_links: {unique_links}")
         
         trace_count_snr = 0
         trace_count_power = 0
@@ -984,12 +984,10 @@ def generateFilteredPlots(df_filtered, aggregation_mode, selected_motes=None, se
                 )
                 trace_count_dist += 1
         
-        print(f"[DEBUG] Trace counts - SNR: {trace_count_snr}, Power: {trace_count_power}, Distribution: {trace_count_dist} for {len(unique_links)} unique links")
+        logger.debug(f"Trace counts - SNR: {trace_count_snr}, Power: {trace_count_power}, Distribution: {trace_count_dist} for {len(unique_links)} unique links")
     
     # Get actual timestep range from filtered data to set x-axis limits
     
-    print(f"[DEBUG] generateFilteredPlots called - df_filtered timestep range: {df_filtered['timestep'].min() if not df_filtered.empty else 'N/A'} to {df_filtered['timestep'].max() if not df_filtered.empty else 'N/A'}, Rows: {len(df_filtered)}")
-
     if not df_filtered.empty:
         min_timestep = int(df_filtered['timestep'].min())
         max_timestep = int(df_filtered['timestep'].max())
@@ -998,10 +996,10 @@ def generateFilteredPlots(df_filtered, aggregation_mode, selected_motes=None, se
         # Ensure we don't go below 0 for timesteps
         if x_range[0] < 0:
             x_range[0] = -0.5
-        print(f"[DEBUG] Setting x_range to: {x_range} (min_timestep={min_timestep}, max_timestep={max_timestep})")
+        logger.debug(f"Setting x_range to: {x_range} (min_timestep={min_timestep}, max_timestep={max_timestep})")
     else:
         x_range = None
-        print("[DEBUG] x_range is None (empty dataframe)")
+        logger.debug(f"x_range is None (empty dataframe)")
     
     # Configure each figure independently with its own axes and layout
     # Update SNR figure
@@ -1040,7 +1038,7 @@ def generateFilteredPlots(df_filtered, aggregation_mode, selected_motes=None, se
     if x_range:
         dist_fig.update_xaxes(range=x_range, autorange=False)
     
-    print(f"[DEBUG] All figures configured - SNR traces: {len(snr_fig.data)}, Power traces: {len(power_fig.data)}, Distribution traces: {len(dist_fig.data)}")
+    logger.debug(f"All figures configured - SNR traces: {len(snr_fig.data)}, Power traces: {len(power_fig.data)}, Distribution traces: {len(dist_fig.data)}")
     
     return snr_fig, power_fig, dist_fig
 
@@ -1052,26 +1050,23 @@ def createInteractiveMoteMetricsApp(df_mote_metrics):
     :return: Dash app instance
     """
     logger.info("Stage: Creating interactive Dash app (mote metrics: SNR, power, distribution)")
-    # Debug: Print what data we're receiving
-    print(f"\n[DEBUG] createInteractiveMoteMetricsApp called with:")
-    print(f"  DataFrame shape: {df_mote_metrics.shape}")
-    print(f"  Timestep range: {df_mote_metrics['timestep'].min()} to {df_mote_metrics['timestep'].max()}")
-    print(f"  Unique timesteps count: {df_mote_metrics['timestep'].nunique()}")
-    print(f"  First few unique timesteps: {sorted(df_mote_metrics['timestep'].unique().tolist())[:10]}")
+    logger.info(f"createInteractiveMoteMetricsApp called with:")
+    logger.info(f"  DataFrame shape: {df_mote_metrics.shape}")
+    logger.info(f"  Timestep range: {df_mote_metrics['timestep'].min()} to {df_mote_metrics['timestep'].max()}")
+    logger.info(f"  Unique timesteps count: {df_mote_metrics['timestep'].nunique()}")
+    logger.info(f"  First few unique timesteps: {sorted(df_mote_metrics['timestep'].unique().tolist())[:10]}")
     
     # Make a copy of the dataframe to avoid modifying the original
     # Ensure link_id column exists
     df_copy = df_mote_metrics.copy()
     if 'link_id' not in df_copy.columns:
-        print("Link ID column not found, creating it")
+        logger.debug("Link ID column not found, creating it")
         df_copy['link_id'] = df_copy['source'].astype(str) + '->' + df_copy['dest'].astype(str)
     
-    print(f"[DEBUG] After copy - Timestep range: {df_copy['timestep'].min()} to {df_copy['timestep'].max()}")
+    logger.info(f"After copy - Timestep range: {df_copy['timestep'].min()} to {df_copy['timestep'].max()}")
     
     # Get unique values for filters
     unique_motes, unique_links = getUniqueMotesAndLinks(df_copy)
-    print(f"Unique motes: {unique_motes}")
-    print(f"Unique links: {unique_links}")
     
     # Create Dash app with cache busting to prevent browser from using cached figures
     app = dash.Dash(__name__)
@@ -1102,12 +1097,12 @@ def createInteractiveMoteMetricsApp(df_mote_metrics):
     initial_snr_fig, initial_power_fig, initial_dist_fig = generateFilteredPlots(df_copy, default_agg_mode, default_motes, default_links)
     
     # Debug: Check what timesteps are in the initial figures' traces
-    print(f"[DEBUG] Initial figures created - checking trace data...")
+    logger.info(f"Initial figures created - checking trace data...")
     for i, trace in enumerate(initial_snr_fig.data[:3]):  # Check first 3 traces
         if hasattr(trace, 'x') and trace.x is not None:
             x_data = list(trace.x) if hasattr(trace.x, '__iter__') else [trace.x]
             if x_data:
-                print(f"  SNR Trace {i} ({trace.name}): x range = {min(x_data)} to {max(x_data)}, {len(x_data)} points")
+                logger.info(f"  SNR Trace {i} ({trace.name}): x range = {min(x_data)} to {max(x_data)}, {len(x_data)} points")
     
     # Define layout with standard HTML components
     app.layout = html.Div([
@@ -1204,20 +1199,19 @@ def createInteractiveMoteMetricsApp(df_mote_metrics):
     )
     def update_plots(selected_motes, selected_links, agg_mode):
         # Debug: Confirm callback is firing
-        print(f"\n[DEBUG] ===== CALLBACK FIRED =====")
-        print(f"[DEBUG] Callback inputs - selected_motes: {selected_motes}, selected_links: {selected_links}, agg_mode: {agg_mode}")
+        logger.info(f"===== CALLBACK FIRED =====")
+        logger.info(f"Callback inputs - selected_motes: {selected_motes}, selected_links: {selected_links}, agg_mode: {agg_mode}")
         
         # CRITICAL: Always start fresh from df_copy, never use cached/old data
         # Create a new copy each time to ensure we're not accidentally using stale references
         df_filtered = df_copy.copy()
         
-        # Debug: Print actual data range being used
         if not df_filtered.empty:
             min_ts = df_filtered['timestep'].min()
             max_ts = df_filtered['timestep'].max()
             unique_ts = sorted(df_filtered['timestep'].unique().tolist())
-            print(f"[DEBUG] Data in callback - Min timestep: {min_ts}, Max timestep: {max_ts}, Unique timesteps: {unique_ts[:10]}{'...' if len(unique_ts) > 10 else ''}")
-            print(f"[DEBUG] Total rows in df_filtered: {len(df_filtered)}")
+            logger.info(f"Data in callback - Min timestep: {min_ts}, Max timestep: {max_ts}, Unique timesteps: {unique_ts[:10]}{'...' if len(unique_ts) > 10 else ''}")
+            logger.info(f"Total rows in df_filtered: {len(df_filtered)}")
         
         # Filter by motes if selected (handle None and empty list)
         if selected_motes and len(selected_motes) > 0:
@@ -1227,9 +1221,8 @@ def createInteractiveMoteMetricsApp(df_mote_metrics):
         if selected_links and len(selected_links) > 0:
             df_filtered = df_filtered[df_filtered['link_id'].isin(selected_links)]
         
-        # Debug: Print after filtering
         if not df_filtered.empty:
-            print(f"[DEBUG] After filtering - Min timestep: {df_filtered['timestep'].min()}, Max timestep: {df_filtered['timestep'].max()}, Rows: {len(df_filtered)}")
+            logger.debug(f"After filtering - Min timestep: {df_filtered['timestep'].min()}, Max timestep: {df_filtered['timestep'].max()}, Rows: {len(df_filtered)}")
         
         # Generate 3 separate plots
         snr_fig, power_fig, dist_fig = generateFilteredPlots(df_filtered, agg_mode, selected_motes, selected_links)
@@ -1467,14 +1460,14 @@ def kill_processes_on_port(port=8050):
         
         # Print script output
         if result.stdout:
-            print(result.stdout.strip())
+            logger.info(result.stdout.strip())
         if result.stderr and result.returncode != 0:
             logger.warning("Port check stderr: {}", result.stderr.strip())
     
     except subprocess.TimeoutExpired:
         logger.warning("Timeout while checking port {}. Proceeding anyway.", port)
     except Exception as e:
-        print(f"Warning: Error checking port {port}: {e}. Proceeding anyway...")
+        logger.warning(f"Warning: Error checking port {port}: {e}. Proceeding anyway...")
 
 def run(data_dir=None, mec_threshold=20.0, rpl_threshold=0.2):
     """
@@ -1491,8 +1484,7 @@ def run(data_dir=None, mec_threshold=20.0, rpl_threshold=0.2):
     logger.info("Stage: Chart generation pipeline started")
     logger.info("Stage: Loading main chart data (MECSattimestep, RPLSattimestep, gamma, surprise, etc.)")
     df_all = getData(data_dir)
-    print(df_all.head(30))
-
+ 
     createCharts(df_all, mec_threshold=mec_threshold, rpl_threshold=rpl_threshold)
     
     # Load and create mote metrics charts
@@ -1500,10 +1492,10 @@ def run(data_dir=None, mec_threshold=20.0, rpl_threshold=0.2):
         folder_path = data_dir if data_dir is not None else _default_data_dir()
         logger.info("Stage: Loading mote metrics from {}", folder_path)
         df_mote_metrics = loadMoteMetrics(folder_path)
-        print(f"\nLoaded {len(df_mote_metrics)} rows of mote metrics data")
-        print(f"Timestep range: {df_mote_metrics['timestep'].min()} to {df_mote_metrics['timestep'].max()}")
-        print(f"Unique timesteps: {sorted(df_mote_metrics['timestep'].unique().tolist())}")
-        print(df_mote_metrics.head(30))
+        logger.info(f"\nLoaded {len(df_mote_metrics)} rows of mote metrics data")
+        logger.info(f"Timestep range: {df_mote_metrics['timestep'].min()} to {df_mote_metrics['timestep'].max()}")
+        logger.info(f"Unique timesteps: {sorted(df_mote_metrics['timestep'].unique().tolist())}")
+        logger.info(df_mote_metrics.head(30))
         
         # Create static charts (for backward compatibility)
         logger.info("Stage: Preparing interactive mote metrics Dash app")
