@@ -47,6 +47,8 @@ out/
 # IDE - VS Code
 .vscode/
 *.code-workspace
+.claude/
+.cursor/
 
 # OS
 .DS_Store

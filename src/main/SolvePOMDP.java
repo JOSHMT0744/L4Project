@@ -538,7 +538,9 @@ public class SolvePOMDP {
 		PrintWriter pwMECSattimestep = null;
 		FileWriter fwRPLSattimestep = null;
 		PrintWriter pwRPLSattimestep = null;
-		
+		FileWriter fwStateTrans = null;
+		PrintWriter pwStateTrans = null;
+
 		try
 		{
 		// Use configured output directory instead of hardcoded path
@@ -560,7 +562,9 @@ public class SolvePOMDP {
 		pwMECSattimestep = new PrintWriter(fwMECSattimestep);
 		fwRPLSattimestep = new FileWriter(new File(outputDir, "RPLSattimestep.txt").getPath());
 		pwRPLSattimestep = new PrintWriter(fwRPLSattimestep);
-		
+		fwStateTrans = new FileWriter(new File(outputDir, "state_transitions.txt").getPath());
+		pwStateTrans = new PrintWriter(fwStateTrans);
+
 		JsonArray rlist = new JsonArray();
 		
 		
@@ -772,6 +776,7 @@ public class SolvePOMDP {
 				 * This also updates POMDP beliefs and transition probabilities.
 				 */
 				obj.put("Selected Action: ", selectedAction+"");
+				int preState = pomdp.getCurrentState();
 				pomdp.setInitialBelief(initialbelief); // update initial belief for the next step
 				iot.DeltaIOTConnector.p = pomdp;
 				// Capture stdout/stderr during performAction to suppress warnings
@@ -883,7 +888,15 @@ public class SolvePOMDP {
 			 	obj.put("Energy Consumption",energyConsumption+"");
 			 	// Note: timestepiot was already incremented above after doSingleRun()
 			 	rlist.add(obj);
-			 	
+
+				// MONITOR: log per-mote state transition for post-hoc feedback-loop analysis
+				int postState = pomdp.getCurrentState();
+				pwStateTrans.println(timestep + " " + moteIndex + " " + preState + " "
+					+ selectedAction + " " + postState + " "
+					+ beliefValues[0] + " " + beliefValues[1] + " "
+					+ beliefValues[2] + " " + beliefValues[3]);
+				pwStateTrans.flush();
+
 			}///End of Motes loop
 			
 			// Log comprehensive metrics for all motes at this timestep
@@ -962,6 +975,7 @@ public class SolvePOMDP {
 			closeResource(pwaction);
 			closeResource(pwMECSattimestep);
 			closeResource(pwRPLSattimestep);
+			closeResource(pwStateTrans);
 			closeResource(fwMECSatProb);
 			closeResource(fwRPLSatProb);
 			closeResource(fwMECSat);
@@ -969,6 +983,7 @@ public class SolvePOMDP {
 			closeResource(fwaction);
 			closeResource(fwMECSattimestep);
 			closeResource(fwRPLSattimestep);
+			closeResource(fwStateTrans);
 		}
 	}
 	

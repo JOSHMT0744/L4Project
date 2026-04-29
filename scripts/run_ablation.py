@@ -33,15 +33,8 @@ SEEDS = [222, 223, 224]
 NUM_TIMESTEPS = 500  # fixed in SolvePOMDP.java
 STAT_COLS = ["mean", "median", "Q1", "Q3", "lower_fence", "upper_fence"]
 # Three principle surprise configs: MIS, CC, and no surprise (useSurpriseUpdating=false)
-SURPRISE_OPTIONS = ["MIS", "CC", "no_surprise"]
-
-# Fail fast if misconfigured (empty surprise would create flat output dirs under abl_id/)
-for s in SURPRISE_OPTIONS:
-    if not s or not str(s).strip():
-        raise ValueError(
-            "SURPRISE_OPTIONS may not contain empty or whitespace-only entries; "
-            f"got {repr(SURPRISE_OPTIONS)}"
-        )
+DEFAULT_SURPRISE_OPTIONS = ["MIS", "CC", "no_surprise", "BF"]
+SURPRISE_OPTIONS = DEFAULT_SURPRISE_OPTIONS  # may be overridden by --surprise CLI arg
 
 
 def project_root() -> Path:
@@ -215,7 +208,7 @@ def is_run_complete(run_dir: Path) -> bool:
 ABL1_LAMBDA = {
     "id": "abl1_lambda",
     "name": "lambda",
-    "levels": [0.1, 0.5, 1.0, 2.0, 5.0],
+    "levels": [0.0, 0.1, 0.5, 1.0, 2.0, 5.0, 20.0],
     "fixed": {"p_c": 0.5, "lookback": 4, "surprise": "MIS", "mec": 20, "rpl": 0.2, "disaster": None},
 }
 ABL2_PC = {
@@ -233,8 +226,18 @@ ABL3_LOOKBACK = {
 ABL4_NFR = {
     "id": "abl4_nfr",
     "name": "nfr",
-    "levels": [(20, 0.2), (17, 0.17), (15, 0.15)],
+    "levels": [(20, 0.2), (17, 0.17), (16.5, 0.165), (16, 0.16), (15, 0.15)],
     "fixed": {"lambda": 1.0, "p_c": 0.5, "lookback": 4, "surprise": "MIS", "disaster": None},
+}
+ABL6_LAMBDA_NFR = {
+    "id": "abl6_lambda_nfr",
+    "name": "lambda_nfr",
+    "levels": [
+        (lam, mec, rpl)
+        for lam in [0.1, 0.5, 1.0, 2.0, 5.0]
+        for mec, rpl in [(20, 0.2), (17, 0.17), (16, 0.16), (15, 0.15)]
+    ],
+    "fixed": {"p_c": 0.5, "lookback": 4, "surprise": "MIS", "disaster": None},
 }
 ABL5_DISASTER = {
     "id": "abl5_disaster",
@@ -243,6 +246,8 @@ ABL5_DISASTER = {
         ("no_fail", None, None, None),
         ("fail200_12-7", 200, "12-7", -1),
         ("fail100_12-7_12-3", 100, "12-7,12-3", -1),
+        ("fail0_2-4_10-6_12-3_perm", 0, "2-4,10-6,12-3", -1),
+        ("fail0_2-4_10-6_12-3_rec250", 0, "2-4,10-6,12-3", 250),
     ],
     "fixed": {"lambda": 1.0, "p_c": 0.5, "lookback": 4, "surprise": "MIS", "mec": 20, "rpl": 0.2},
 }
@@ -268,6 +273,11 @@ def run_id_for_abl4(level: tuple[float, float], seed: int) -> str:
 def run_id_for_abl5(level: tuple, seed: int) -> str:
     scenario_id = level[0]
     return f"{scenario_id}_seed{seed}"
+
+
+def run_id_for_abl6(level: tuple, seed: int) -> str:
+    lam, mec, rpl = level
+    return f"lam{lam}_mec{mec}_rpl{rpl}_seed{seed}"
 
 
 def run_single_ablation(
@@ -334,6 +344,16 @@ def run_single_ablation(
                         mec_threshold=mec, rpl_threshold=rpl,
                         surprise=surprise,
                     )
+                elif abl_id == "abl6_lambda_nfr":
+                    lam, mec, rpl = level
+                    run_id = run_id_for_abl6(level, seed)
+                    output_rel = f"output_dir/results/abl6_lambda_nfr/{surprise}/{run_id}"
+                    config_path = write_run_config(
+                        root, output_rel, seed, lambda_val=lam,
+                        p_c=fixed.get("p_c"), lookback=fixed.get("lookback"),
+                        mec_threshold=mec, rpl_threshold=rpl,
+                        surprise=surprise,
+                    )
                 else:  # abl5_disaster
                     scenario_id, fail_ts, links, rec_ts = level[0], level[1], level[2], level[3]
                     run_id = run_id_for_abl5(level, seed)
@@ -389,6 +409,8 @@ def build_summary_per_ablation(root: Path, abl: dict, seeds: list[int]) -> pd.Da
                     run_id = run_id_for_abl3(level, seed)
                 elif abl_id == "abl4_nfr":
                     run_id = run_id_for_abl4(level, seed)
+                elif abl_id == "abl6_lambda_nfr":
+                    run_id = run_id_for_abl6(level, seed)
                 else:
                     run_id = run_id_for_abl5(level, seed)
                 run_dir = surprise_dir / run_id
@@ -429,7 +451,7 @@ def main_run(args: argparse.Namespace, root: Path, cp_sep: str, no_plots: bool) 
     """Execute runs for selected ablations."""
     seeds = SEEDS if not args.quick else [222]
     ablations = [
-        ABL1_LAMBDA, ABL2_PC, ABL3_LOOKBACK, ABL4_NFR, ABL5_DISASTER
+        ABL1_LAMBDA, ABL2_PC, ABL3_LOOKBACK, ABL4_NFR, ABL5_DISASTER, ABL6_LAMBDA_NFR
     ]
     if args.ablations:
         ablations = [a for a in ablations if a["id"] in args.ablations]
@@ -446,7 +468,7 @@ def main_summary_only(args: argparse.Namespace, root: Path) -> None:
     """Only aggregate existing run dirs and write CSVs (no Java runs)."""
     seeds = SEEDS if not args.quick else [222]
     ablations = [
-        ABL1_LAMBDA, ABL2_PC, ABL3_LOOKBACK, ABL4_NFR, ABL5_DISASTER
+        ABL1_LAMBDA, ABL2_PC, ABL3_LOOKBACK, ABL4_NFR, ABL5_DISASTER, ABL6_LAMBDA_NFR
     ]
     if args.ablations:
         ablations = [a for a in ablations if a["id"] in args.ablations]
@@ -587,11 +609,13 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Ablation study runner for L4Project")
     parser.add_argument("--ablations", nargs="+", help="Run only these ablation IDs (e.g. abl1_lambda abl2_pc)")
     parser.add_argument("--quick", action="store_true", help="Quick mode: 1 seed, 2 levels per ablation")
+    parser.add_argument("--surprise", nargs="+", help="Surprise options to run (e.g. MIS CC BF no_surprise); defaults to all three")
     sub = parser.add_subparsers(dest="cmd", help="Command")
     for name in ["run", "summary", "plots", "readme"]:
         sp = sub.add_parser(name)
         sp.add_argument("--ablations", nargs="+", dest="ablations", help="Limit to these ablation IDs")
         sp.add_argument("--quick", action="store_true", dest="quick", help="Quick mode")
+        sp.add_argument("--surprise", nargs="+", dest="surprise", help="Surprise options to run (e.g. MIS CC BF no_surprise)")
         if name == "run":
             sp.add_argument(
                 "--overwrite",
@@ -617,6 +641,17 @@ def main() -> None:
         args.no_plots = False
     else:
         args.no_plots = True
+
+    # Override SURPRISE_OPTIONS globally if --surprise was given
+    global SURPRISE_OPTIONS
+    surprise_arg = getattr(args, "surprise", None)
+    if surprise_arg:
+        for s in surprise_arg:
+            if not s or not str(s).strip():
+                raise ValueError(f"--surprise values may not be empty; got {repr(surprise_arg)}")
+        SURPRISE_OPTIONS = surprise_arg
+    else:
+        SURPRISE_OPTIONS = DEFAULT_SURPRISE_OPTIONS
 
     root = project_root()
     cp_sep = ";" if os.name == "nt" else ":"

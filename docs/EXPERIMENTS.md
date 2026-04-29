@@ -42,6 +42,15 @@ All experiment parameters are driven by **solver.config** (and optionally `-Dcon
    - **MECSattimestep.txt**, **RPLSattimestep.txt** — one value per timestep (energy, packet loss).  
    - **gamma.txt**, **surpriseCC.txt**, **surpriseMIS.txt**, **surpriseBF.txt** — per mote/timestep.  
    - **SelectedAction.txt**, **MECSatProb.txt**, **RPLSatProb.txt**, etc.
+   - **state_transitions.txt** — per-mote, per-timestep log of `preState action postState b0..b3`.
+     Used by `plotStateTransitions.py` to generate animated state-transition diagrams.
+     See [STATE_TRANSITION_ANALYSIS.md](STATE_TRANSITION_ANALYSIS.md) for full details.
+
+4. (Optional) Generate animated state-transition diagrams after the run:
+   ```bash
+   python plotStateTransitions.py --output-dir output_dir --window 20
+   ```
+   Outputs one HTML per mote in `output_dir/state_transitions/`.
 
 ---
 

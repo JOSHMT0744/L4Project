@@ -82,20 +82,22 @@ public class ERPolicy {
     
     /**
      * Select action at belief using softmax sampling
+     * belief is a probability distribution over state
+     * Returns the index of the selected action
      */
     public int selectAction(double[] belief) {
         int nActions = qFunctions.size();
 
         System.out.println("[ERPolicy] Number of actions: " + nActions);
 
-        // Compute Q-value for each action (max over alphas)
+        // Compute Q-value for each action (max over alphas) --> len(qValues) = nActions
         double[] qValues = new double[nActions];
         for (int a = 0; a < nActions; a++) {
             qValues[a] = computeQValue(belief, qFunctions.get(a));
             System.out.println("[ERPolicy] Q-value for action " + a + ": " + qValues[a]);
         }
 
-        // Compute softmax weights
+        // Compute softmax weights over the q-values
         double[] weights = softmax(qValues);
         System.out.print("[ERPolicy] Softmax weights: ");
         for (int i = 0; i < weights.length; i++) {
@@ -166,7 +168,7 @@ public class ERPolicy {
         }
         
         // Check for invalid lambda
-        if (lambda <= 0.0 || Double.isNaN(lambda) || Double.isInfinite(lambda)) {
+        if (lambda < 0.0 || Double.isNaN(lambda) || Double.isInfinite(lambda)) {
             // Fallback to uniform distribution if lambda is invalid
             double uniformProb = 1.0 / x.length;
             for (int i = 0; i < result.length; i++) {
@@ -174,7 +176,21 @@ public class ERPolicy {
             }
             return result;
         }
-        
+
+        // Handle lambda=0.0 case: return greedy (argmax) action for deterministic selection
+        if (lambda == 0.0) {
+            double maxVal = Double.NEGATIVE_INFINITY;
+            int maxIdx = 0;
+            for (int i = 0; i < x.length; i++) {
+                if (x[i] > maxVal) {
+                    maxVal = x[i];
+                    maxIdx = i;
+                }
+            }
+            result[maxIdx] = 1.0;  // Greedy selection - probability 1.0 for best action
+            return result;
+        }
+
         // Scale by temperature
         double[] scaled = new double[x.length];
         for (int i = 0; i < x.length; i++) {

@@ -233,19 +233,12 @@ public class POMDP {
 		return b0;
 	}
 	
-	/////Added for for IoT
 	public void setInitialBelief(BeliefPoint b)
 	{
 		b0=b;
-	}
+	}	
 	
-	///// Decrease power transmission
-	
-	
-	////Added for IoT//to perform action
 	public int nextState(int currentState, int action) {
-		// TODO Auto-generated method stub
-		///check for DeltaIOT//////////////////////////////
 		// Use the active connector instance instead of creating a new one
 		// The active instance has noiseInjector properly configured
 		iot.DeltaIOTConnector dataConnector = iot.DeltaIOTConnector.activeInstance;

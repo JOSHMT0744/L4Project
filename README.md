@@ -9,6 +9,7 @@ POMDP-based adaptation for IoT networks: entropy-regularized solvers (ERPerseus,
 - [Quick start: run a single experiment](#quick-start-run-a-single-experiment)
 - [Creating your own config files](#creating-your-own-config-files)
 - [Running with your config](#running-with-your-config)
+- [Replicating paper results](#replicating-paper-results)
 - [Ablation studies](#ablation-studies)
 - [Generating charts](#generating-charts)
 - [Configuration (solver.config)](#configuration-srcsolverconfig)
@@ -37,7 +38,7 @@ POMDP-based adaptation for IoT networks: entropy-regularized solvers (ERPerseus,
 - **JDK 8+**
 - **Python 3.7+** (for `createCharts.py` and `scripts/`)
 - **DeltaIoT / Simulator JARs** in `libraries/` (and any deps, e.g. `json-simple`). Ensure `Simulator.jar` and `deltaiot` JARs are on the classpath.
-- **Log4j 2** (optional but recommended): add `log4j-api-2.24.1.jar` and `log4j-core-2.24.1.jar` to `libraries/`. The root `log4j2.xml` is picked up when the classpath includes `.` (e.g. `.;bin;libraries/*` on Windows).
+- **Log4j 2** (optional but recommended): add `log4j-api-2.24.3.jar` to `libraries/`. The root `log4j2.xml` is picked up when the classpath includes `.` (e.g. `.;bin;libraries/*` on Windows).
 
 ## Machine setup (development and run environment)
 
@@ -169,6 +170,74 @@ python scripts/init_solver_config.py --non-interactive
 
 ---
 
+## Replicating paper results
+
+The main results in the paper are produced by three repeated runs with seeds 222, 223, and 224, using the following fixed configuration. Pre-generated config files are provided at `output_dir/results/configs/run_s222.config`, `run_s223.config`, and `run_s224.config`.
+
+### Exact configuration used
+
+| Parameter | Value |
+|-----------|-------|
+| `algorithmType` | `erperseus` |
+| `lambda` | `2.0` |
+| `surpriseMeasureForGamma` | `MIS` |
+| `p_c` | `0.25` |
+| `useSurpriseUpdating` | `true` |
+| `lookback` | `5` |
+| `mecThreshold` | `17.0` |
+| `rplThreshold` | `0.17` |
+| `runSeed` | `222`, `223`, `224` (one per run) |
+
+Output for each seed is written to `output_dir/results/init_runs/s222`, `s223`, and `s224` respectively.
+
+### Running the three seeds
+
+**Option A — interactive config builder (recommended):**
+
+```bash
+cd L4Project
+python scripts/init_solver_config.py
+# When prompted: algorithmType=erperseus, lambda=2.0, numRuns=3, seeds=222,223,224
+# surpriseMeasureForGamma=MIS, p_c=0.25, useSurpriseUpdating=true, lookback=5
+# mecThreshold=17.0, rplThreshold=0.17, no link failure
+```
+
+**Option B — run directly from pre-generated configs:**
+
+Run each seed sequentially (Bash):
+
+```bash
+cd L4Project
+for s in 222 223 224; do
+  java -DconfigPath="output_dir/results/configs/run_s${s}.config" \
+       -cp ".;bin;libraries/*" main.SolvePOMDP
+done
+```
+
+On Windows Git Bash, quote the classpath to prevent `;` being treated as a command separator. If the wildcard `libraries/*` does not expand correctly, list jars explicitly:
+
+```bash
+CP="bin;libraries/Simulator.jar;libraries/antlr-runtime-3.5.2.jar;libraries/commons-math3-3.6.1.jar;libraries/gurobi-10.0.3.jar;libraries/jfreechart-1.5.3.jar;libraries/joptimizer-4.0.0.jar;libraries/json-simple-4.0.1.jar;libraries/jython-standalone-2.7.4.jar;libraries/libpomdp-parser-1.0.0.jar;libraries/log4j-api-2.24.3.jar;libraries/lpsolve-5.5.2.0.jar;libraries/mtj-1.0.4.jar"
+for s in 222 223 224; do
+  java -DconfigPath="output_dir/results/configs/run_s${s}.config" -cp "$CP" main.SolvePOMDP
+done
+```
+
+### Generating charts for replication runs
+
+After all three seeds have completed, generate charts for each run with the thresholds that match the config:
+
+```bash
+for s in 222 223 224; do
+  python createCharts.py \
+    --output-dir output_dir/results/init_runs/s${s} \
+    --mec-threshold 17 \
+    --rpl-threshold 0.17
+done
+```
+
+---
+
 ## Ablation studies
 
 **`scripts/run_ablation.py`** runs predefined ablations (lambda, p_c, lookback, NFR thresholds, disaster/link-failure scenarios) over multiple seeds and surprise measures (MIS, CC, no_surprise), then writes summary CSVs and optional figures. All runs use configs generated from `src/solver.config`; output goes under `output_dir/results/<abl_id>/<surprise>/<run_id>/`.
@@ -257,17 +326,6 @@ All hyperparameters are configured in `src/solver.config` (or in a config file p
 | `beliefSamplingRuns` | Number of belief sampling runs for approximate solvers | `10` |
 | `beliefSamplingSteps` | Steps per belief sampling run | `200` |
 
-### Exact Algorithm Settings
-
-| Setting | Role | Default |
-|--------|------|---------|
-| `lpsolver` | LP solver: `gurobi`, `joptimizer`, `lpsolve` | `lpsolve` |
-| `pruningMethod` | POMDP pruning: `standard`, `accelerated` | `accelerated` |
-| `epsilon` | Minimum value improvement to add vectors | `0.000001` |
-| `acceleratedLPThreshold` | Use accelerated LP when vector count exceeds this | `200` |
-| `acceleratedTolerance` | Convergence threshold for accelerated LP | `0.0001` |
-| `coefficientThreshold` | Discard LP coefficients below this (numerical stability) | `0.000000001` |
-
 ### Experiment Parameters (Optional)
 
 These control learning and adaptation and the thresholds used in charts:
@@ -294,7 +352,6 @@ These control learning and adaptation and the thresholds used in charts:
 
 | Setting | Role | Default |
 |--------|------|---------|
-| `dumpPolicyGraph` | Dump policy graph after convergence (only for exact method) | `false` |
 | `dumpActionLabels` | Use action labels instead of numbers in output files | `true` |
 
 **Note:** Modify `solver.config` (or use `init_solver_config.py`) before running to change any of these parameters. When using `-DconfigPath=`, the specified file defines `outputDirectory`, `mecThreshold`, and `rplThreshold` for that run and for the subsequent chart generation.
@@ -324,9 +381,6 @@ These control learning and adaptation and the thresholds used in charts:
 
 - **createCharts.py KeyError: 'timestep' or no data**  
   Ensure `--output-dir` points to a directory that **directly** contains the solver output files (e.g. `output_dir/results/init_runs/s222`), not a parent folder that only contains subdirectories.
-
-- **LP solver errors**  
-  Use `lpsolver=lpsolve` in `solver.config` if you do not have Gurobi.
 
 - **Bash: classpath with semicolons**  
   On Git Bash or other Unix shells, quote the classpath so `;` is not interpreted as a command separator: `-cp ".;bin;libraries/*"`.

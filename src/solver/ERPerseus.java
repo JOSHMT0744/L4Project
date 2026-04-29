@@ -312,7 +312,7 @@ public class ERPerseus implements Solver {
 					utility_bprime /= lambda;
 					*/
 
-					// Since LogSumExp function is differentiable, we can copmute the gradient of the utility, which
+					// Since LogSumExp function is differentiable, we can compute the gradient of the utility, which
 					// gives an alpha vector corresponding to the entropy regularised utility at the next belief
 					double[] weights = softmax(dotProducts); // Softmax weights over Q-sets
 					

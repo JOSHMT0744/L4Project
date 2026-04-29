@@ -203,6 +203,14 @@ public class DeltaIOTConnector {
 		return this.surpriseMeasureForGamma;
 	}
 	
+	/**
+	 * Calculates the Confidence-Corrected Surprise for a given action and observed next state.
+	 * @param transitionBelief
+	 * @param transitionBeliefReset
+	 * @param action
+	 * @param nextstate
+	 * @return
+	 */
 	private double confidenceCorrectedSurprise(double[][][] transitionBelief, double[][][] transitionBeliefReset, int action, int nextstate) {
 		// Implements SCC1(yt+1|xt+1; π(t)) := DKL[π(t)||πflat(.|yt+1, xt+1)] from "A taxonomy of surprise definitions" (2022)
 		// For each possible current state, calculate KL divergence between:
@@ -239,6 +247,13 @@ public class DeltaIOTConnector {
 		return surpriseCC;
 	}
 	
+	/**
+	 * Helper method to calculate log predicted probabilities of the observed next state under the given transition belief.
+	 * @param transitionBelief
+	 * @param action
+	 * @param nextstate
+	 * @return
+	 */
 	private double[] getLogPredProbs(double[][][] transitionBelief, int action, int nextstate) {
 		// Calculate belief pseudo-counts for all possible next states, and then for the specifically chosen next state
 		// Use sum over rows as a normaliser so probability is in [0,1]
@@ -609,7 +624,7 @@ public class DeltaIOTConnector {
 
 		// varSMiLE gamma formula (Definition 4): gamma(S, m) = mS / (1 + mS)
 		// Equivalent form: gamma = 1 / (1 + 1/(m*S)) where S = exp(logSurprise)
-		// This ensures: high surprise -> high gamma (less learning), low surprise -> low gamma (more learning)
+		// This ensures: high surprise/|MIS| -> high gamma (less learning), low surprise -> low gamma (more learning)
 		// This form is numerically stable and equivalent to mS/(1+mS)
 		double gamma = 1.0 / (1.0 + (1/ (m*Math.exp(logSurprise))));
 		// Ensure gamma has a minimum value to allow some learning even when surprise is very low
