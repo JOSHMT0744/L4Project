@@ -211,21 +211,7 @@ This means that even after the value function has converged, the *execution* pol
 
 ---
 
-## 7. The Role of λ
-
-The temperature parameter λ controls the degree of entropy regularisation:
-
-- **λ → 0:** Softmax concentrates on the argmax. ERPerseus recovers standard Perseus exactly. The Java implementation handles this with an explicit `if (lambda > 0.0) ... else ...` branch that falls through to the standard hard-max logic.
-
-- **Small λ (e.g., 0.1–0.5):** Mild smoothing. The policy is nearly deterministic but avoids pathological tie-breaking and is differentiable with respect to belief perturbations.
-
-- **Moderate λ (e.g., 1.0–2.0):** Meaningful stochasticity. The agent actively explores near-optimal actions and the value function accounts for the entropy bonus.
-
-- **Large λ:** The policy approaches uniform random. This is typically undesirable, but the paper's results (Section 4.4) show that within the tested range (λ ∈ {0.1, 0.5, 1.0, 2.0, 5.0}), performance remains stable — likely because the Q-value magnitudes (~500–850) are large enough that even λ = 5.0 produces a relatively peaked distribution.
-
----
-
-## 8. Numerical Stability
+## 7. Numerical Stability
 
 The Java implementation uses a **numerically stable softmax** (lines 557–579). Before exponentiating, the maximum value is subtracted from all inputs:
 

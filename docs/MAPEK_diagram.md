@@ -9,7 +9,7 @@ graph TB
         K1["POMDP Model<br/>(states, transitions,<br/>observations, rewards)"]
         K2["Belief State b(s)<br/>(4-state distribution)"]
         K3["Value Function<br/>(α-vectors from ERPerseus)"]
-        K4["varSMiLE Gamma<br/>(surprise-driven<br/>belief revision weight)"]
+        K4["SMiLe Gamma<br/>(surprise-driven<br/>belief revision weight)"]
         K5["QoS History<br/>(packet loss,<br/>energy consumption)"]
     end
 
@@ -136,7 +136,7 @@ sequenceDiagram
     QoS-->>Connector: (packetLoss, energyConsumption)
     Connector->>POMDP: Map (PL, EC) → state 0–3
 
-    Note over Connector: varSMiLE Belief Revision
+    Note over Connector: SMiLe Belief Revision
     Connector->>Connector: Compute surprise (MIS/CC/BF)
     Connector->>Connector: γ = mS / (1 + mS)
     Connector->>Connector: b' = (1−γ)·b_updated + γ·b_flat
@@ -192,7 +192,7 @@ graph LR
     class S3 bad
 ```
 
-## varSMiLE Belief Revision (Knowledge Update)
+## SMiLe Belief Revision (Knowledge Update)
 
 ```mermaid
 graph LR
@@ -251,7 +251,7 @@ graph TB
     end
 
     subgraph IoT["DeltaIoT Simulator"]
-        DC["DeltaIOTConnector<br/>(performDTP / performITP,<br/>varSMiLE, surprise)"]
+        DC["DeltaIOTConnector<br/>(performDTP / performITP,<br/>SMiLe, surprise)"]
         SIM["SimulationClient<br/>(doSingleRun,<br/>getProbe, getQoS)"]
         NI_EXT["NoiseInjector<br/>(link/mote failures,<br/>duration timers)"]
         QH["QoSDataHelper<br/>(polling wait for<br/>QoS readiness)"]

@@ -77,7 +77,7 @@ public class DeltaIOTConnector {
 	
 	// History of mutual information values per mote for MIS calculation
 	private Map<Integer, ArrayList<Double>> miHistory;
-	private int lookback = 4; // m - lookback period for MIS calculation (configurable via setLookback)
+	private int lookback = 4; // m - lookback period for MIS calculation (SMiLe via setLookback)
 	// Track which timesteps have already had bounds written (to avoid duplicates)
 	private int lastBoundsTimestep = -1;
 	
@@ -87,10 +87,10 @@ public class DeltaIOTConnector {
 	// Surprise measure to use for gamma calculation: "CC" (Confidence-Corrected), "BF" (Bayes Factor), or "MIS" (Mutual Information Surprise)
 	private String surpriseMeasureForGamma = "CC"; // Default to Confidence-Corrected Surprise
 	
-	// Probability of change (volatility): in (0, 1); controls m = p_c/(1-p_c) in varSMiLE gamma formula. Configurable for experiments.
+	// Probability of change (volatility): in (0, 1); controls m = p_c/(1-p_c) in SMiLe gamma formula. SMiLe for experiments.
 	private double p_c = 0.5;
 	
-	// If true, use varSMiLE (surprise-weighted) transition belief updates; if false, use classic Bayesian (Dirichlet +1 only).
+	// If true, use SMiLe (surprise-weighted) transition belief updates; if false, use classic Bayesian (Dirichlet +1 only).
 	private boolean useSurpriseUpdating = true;
 	
 	// Output directory for file operations
@@ -116,7 +116,7 @@ public class DeltaIOTConnector {
 		return this.outputDirectory;
 	}
 	
-	/** Set p_c (probability of change) for varSMiLE; must be in (0, 1). Used in gamma = m*S/(1+m*S) with m = p_c/(1-p_c). */
+	/** Set p_c (probability of change) for SMiLe; must be in (0, 1). Used in gamma = m*S/(1+m*S) with m = p_c/(1-p_c). */
 	public void setP_c(double p_c) {
 		if (p_c <= 0 || p_c >= 1) {
 			throw new IllegalArgumentException("p_c must be in (0, 1), got " + p_c);
@@ -140,7 +140,7 @@ public class DeltaIOTConnector {
 		return this.lookback;
 	}
 	
-	/** Set whether to use surprise-based (varSMiLE) or classic Bayesian transition belief updates. */
+	/** Set whether to use surprise-based (SMiLe) or classic Bayesian transition belief updates. */
 	public void setUseSurpriseUpdating(boolean useSurpriseUpdating) {
 		this.useSurpriseUpdating = useSurpriseUpdating;
 	}
@@ -622,7 +622,7 @@ public class DeltaIOTConnector {
 		// p_c (probability of change) controls the rate of change of the transition belief; set via setP_c() for experiments
 		double m = this.p_c / (1.0 - this.p_c);
 
-		// varSMiLE gamma formula (Definition 4): gamma(S, m) = mS / (1 + mS)
+		// SMiLe gamma formula (Definition 4): gamma(S, m) = mS / (1 + mS)
 		// Equivalent form: gamma = 1 / (1 + 1/(m*S)) where S = exp(logSurprise)
 		// This ensures: high surprise/|MIS| -> high gamma (less learning), low surprise -> low gamma (more learning)
 		// This form is numerically stable and equivalent to mS/(1+mS)
@@ -636,8 +636,8 @@ public class DeltaIOTConnector {
 		appendToFile(new File(outputDirectory, "surpriseCC.txt").getPath(), Math.exp(logSurpriseCC), DeltaIOTConnector.selectedmote.getMoteid(), DeltaIOTConnector.timestep);
 		appendToFile(new File(outputDirectory, "surpriseMIS.txt").getPath(), currentMIS, DeltaIOTConnector.selectedmote.getMoteid(), DeltaIOTConnector.timestep);
 
-		// varSMiLE updating of transitionBeliefCurr
-		// The varSMiLE rule: new_belief = (1-gamma) * updated_current + gamma * updated_flat_prior
+		// SMiLe updating of transitionBeliefCurr
+		// The SMiLe rule: new_belief = (1-gamma) * updated_current + gamma * updated_flat_prior
 		// Both beliefs are updated with +1.0 for the observed transition
 		for (int stateIndex = 0; stateIndex < p.getNumStates(); stateIndex++) {
 			for (int nextStateIndex = 0; nextStateIndex < p.getNumStates(); nextStateIndex++) {

@@ -1,6 +1,6 @@
 # Surprise-based BA-POMDP: Entropy-Regularized Value Iteration with Adaptive Learning
 
-POMDP-based adaptation for IoT networks: entropy-regularized solvers (ERPerseus, ERPBVI) plus **varSMiLE** (surprise-driven learning of Transition & Observation transition beliefs) and **MIS** (Mutual Information Surprise) for adaptive gamma. Goals: minimize energy (MEC) and packet loss (RPL).
+POMDP-based adaptation for IoT networks: entropy-regularized solvers (ERPerseus, ERPBVI) plus **SMiLE** (surprise-driven learning of Transition & Observation transition beliefs) and **MIS** (Mutual Information Surprise) for adaptive gamma. Goals: minimize energy (MEC) and packet loss (RPL).
 
 ## Contents
 
@@ -24,7 +24,7 @@ POMDP-based adaptation for IoT networks: entropy-regularized solvers (ERPerseus,
 | Path | Purpose |
 |------|---------|
 | **`domains/`** | POMDP domain files (e.g. `IoT.POMDP`, `IoT2.POMDP`). |
-| **`src/`** | Java source: `main/SolvePOMDP.java` (entry point), `solver/` (ERPerseus, etc.), `iot/DeltaIOTConnector.java` (varSMiLE, surprise), `pomdp/`. |
+| **`src/`** | Java source: `main/SolvePOMDP.java` (entry point), `solver/` (ERPerseus, etc.), `iot/DeltaIOTConnector.java` (SMiLe, surprise), `pomdp/`. |
 | **`src/solver.config`** | Main solver configuration (algorithm, lambda, seeds, NFR thresholds, link failure, etc.). Can be overridden with `-DconfigPath=<path>`. |
 | **`scripts/`** | Python helpers: **`init_solver_config.py`** (interactive config builder), **`run_ablation.py`** (ablation runner), **`config_utils.py`** (shared config I/O). |
 | **`createCharts.py`** | Chart generation (MEC/RPL, surprise, gamma, MIS, mote metrics). Run after a solver run; can target a specific output directory. |
@@ -42,7 +42,7 @@ POMDP-based adaptation for IoT networks: entropy-regularized solvers (ERPerseus,
 
 ## Machine setup (development and run environment)
 
-This project was developed and run on the following machine. You can update this section with your own environment for reproducibility.
+The specs of the device this project was developed on:
 
 | Item | Details |
 |------|---------|
@@ -53,11 +53,11 @@ This project was developed and run on the following machine. You can update this
 | **Python** | 3.7+ (e.g. 3.10 or 3.11 with venv) |
 | **Working directory** | Project root `L4Project` (or workspace root; see Run on a Local Machine) |
 
-- **Notes:** A single full run (500 timesteps, default belief sampling) typically completes in a few minutes.
+- **Notes:** A single full run (500 timesteps, default belief sampling) typically completes in 5-10 minutes.
 
 ## Architecture
 
-DeltaIoT is a sensor network of **Heat**, **PIR**, and **RFID** nodes with a **Gateway**. Data flows from sensors toward the gateway; the POMDP plans DTP/ITP actions to tune power and spreading factor.
+DeltaIoT is a sensor network of **Infrared**, **PIR**, and **RFID** nodes with a central **Gateway**. Data flows from motes toward the gateway; the POMDP plans DTP/ITP actions to tune power and spreading factor.
 
 ![DeltaIoT architecture: sensor network and data flow to the Gateway](docs/DeltaIoT-Abstraction.jpg)
 
@@ -172,14 +172,14 @@ python scripts/init_solver_config.py --non-interactive
 
 ## Replicating paper results
 
-The main results in the paper are produced by three repeated runs with seeds 222, 223, and 224, using the following fixed configuration. Pre-generated config files are provided at `output_dir/results/configs/run_s222.config`, `run_s223.config`, and `run_s224.config`.
+The main results in the paper are produced by three repeated runs with seeds 222, 223, and 224, using varying configurations. The Table. 28 config is contained in  `output_dir/results/configs/run_s222.config`.
 
 ### Exact configuration used
 
 | Parameter | Value |
 |-----------|-------|
 | `algorithmType` | `erperseus` |
-| `lambda` | `2.0` |
+| `lambda` | `0.1` |
 | `surpriseMeasureForGamma` | `MIS` |
 | `p_c` | `0.25` |
 | `useSurpriseUpdating` | `true` |
@@ -333,9 +333,9 @@ These control learning and adaptation and the thresholds used in charts:
 | Setting | Role | Default |
 |--------|------|---------|
 | `runSeed` | Random seed for solver, mote order, policy (vary for repeated runs, e.g. 222, 223, …) | `222` |
-| `surpriseMeasureForGamma` | Surprise measure for varSMiLE: `CC`, `BF`, or `MIS` | `MIS` |
+| `surpriseMeasureForGamma` | Surprise measure for SMiLe: `CC`, `BF`, or `MIS` | `MIS` |
 | `p_c` | Probability of change in (0,1) for SMiLE gamma; `m = p_c/(1-p_c)` | `0.5` |
-| `useSurpriseUpdating` | `true` = varSMiLE (surprise-weighted) updates; `false` = classic Bayesian | `true` |
+| `useSurpriseUpdating` | `true` = SMiLe (surprise-weighted) updates; `false` = classic Bayesian | `true` |
 | `lookback` | Lookback period (m) for MIS calculation | `4` |
 | `mecThreshold` | MEC satisfaction threshold (energy); used in solver and in createCharts MEC plot | `20` |
 | `rplThreshold` | RPL satisfaction threshold (packet loss ratio); used in solver and in createCharts RPL plot | `0.2` |
@@ -360,7 +360,7 @@ These control learning and adaptation and the thresholds used in charts:
 
 | File | Content |
 |------|---------|
-| `gamma.txt` | varSMiLE mixing factor per mote/timestep |
+| `gamma.txt` | SMiLe mixing factor per mote/timestep |
 | `surpriseCC.txt`, `surpriseBF.txt`, `surpriseMIS.txt` | Surprise measures per mote |
 | `MISBounds.txt` | MIS 95% bounds |
 | `MECSattimestep.txt`, `RPLSattimestep.txt` | Gateway QoS (energy, packet loss) per timestep |
@@ -388,7 +388,7 @@ These control learning and adaptation and the thresholds used in charts:
 ## Algorithm and Code (short)
 
 - **ERPerseus:** `src/solver/ERPerseus.java` — Perseus with softmax over actions and value vectors (λ).
-- **varSMiLE:** `DeltaIOTConnector.updateTransitionBelief` — gamma from surprise (CC, BF, or MIS); `transitionBeliefCurr` and `observationBelief` drive `getTransitionProbability` / `getObservationProbability`.
+- **SMiLe:** `DeltaIOTConnector.updateTransitionBelief` — gamma from surprise (CC, BF, or MIS); `transitionBeliefCurr` and `observationBelief` drive `getTransitionProbability` / `getObservationProbability`.
 - **Surprise / MIS:** `DeltaIOTConnector` (e.g. `confidenceCorrectedSurprise`, `bayesFactorSurprise`, `calculateAndStoreMIS`); MIS bounds follow the 95% interval in the MIS surprise paper.
 
 ## References
@@ -396,8 +396,8 @@ These control learning and adaptation and the thresholds used in charts:
 - *Mutual Information Surprise* — [arXiv:2508.17403](https://www.arxiv.org/pdf/2508.17403)
 - *Perseus* — Spaan & Vlassis, JAIR 2005
 - *Entropy-regularized PBVI* — Delecki et al., arXiv:2402.09388
-- *varSMiLE* — Liakoni et al., Neural Computation 2021
+- *SMiLe* — Liakoni et al., Neural Computation 2021
 
 ## License
 
-GPL-3.0. Based on SolvePOMDP by Erwin Walraven (TU Delft); extended for IoT and varSMiLE/ER.
+GPL-3.0. Based on SolvePOMDP by Erwin Walraven (TU Delft); extended for IoT and SMiLe/ER.

@@ -1,6 +1,6 @@
 # MAPE-K Implementation for DeltaIoT in SolvePOMDP
 
-This document describes how the **MAPE-K** (Monitor–Analyse–Plan–Execute with shared **K**nowledge) autonomic control loop is implemented in the DeltaIoT adaptation pipeline within `SolvePOMDP.runCaseIoT()`. The implementation coordinates POMDP-based decision-making with a network simulator to adapt transmission power (DTP/ITP) per mote over discrete timesteps.
+This document describes how the **MAPE-K** (Monitor–Analyse–Plan–Execute with shared Knowledge) autonomic control loop is implemented in the DeltaIoT adaptation pipeline within `SolvePOMDP.runCaseIoT()`. The implementation coordinates POMDP-based decision-making with a network simulator to adapt transmission power (DTP/ITP) per mote over discrete timesteps.
 
 ---
 

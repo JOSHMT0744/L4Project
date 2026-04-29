@@ -12,7 +12,7 @@ MIS is used inside **`updateTransitionBelief`** when the surprise measure is set
 
 1. Updates Dirichlet counts with +1.0 for that transition (prior → posterior).
 2. Computes MIS via **`calculateAndStoreMIS`** (prior = current belief, posterior = belief after +1.0).
-3. Converts MIS into a **varSMiLE gamma** (learning rate):
+3. Converts MIS into a **SMiLe gamma** (learning rate):
    - **MIS &lt; 0** (stalled learning / over-exploitation): lower gamma → more blending toward a flat prior, encouraging exploration.
    - **MIS &gt; 0** (extra learning / over-exploration): higher gamma → less blending, continuing to exploit the current transition belief.
 
@@ -212,7 +212,7 @@ So:
 - **Theorem 1:** With probability ≥ 1−ρ,  
   Î_{n+m} − Î_n ∈ (log(n+m)−log(n)) ± (√(2m ln(2/ρ)) · ln(n+m))/(n+m).  
   Violations (MIS outside [lowerBound, upperBound]) indicate surprise (stalled learning, process drift, or sudden growth).
-- **MISRP:** The paper’s reaction policy (sampling adjustment, process forking) is not implemented here; only the **MIS value and its bounds** are computed and then fed into the existing **varSMiLE gamma** rule in `updateTransitionBelief`.
+- **MISRP:** The paper’s reaction policy (sampling adjustment, process forking) is not implemented here; only the **MIS value and its bounds** are computed and then fed into the existing **SMiLe gamma** rule in `updateTransitionBelief`.
 
 ---
 
