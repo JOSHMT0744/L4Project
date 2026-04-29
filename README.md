@@ -23,7 +23,7 @@ POMDP-based adaptation for IoT networks: entropy-regularized solvers (ERPerseus,
 
 | Path | Purpose |
 |------|---------|
-| **`domains/`** | POMDP domain files (e.g. `IoT.POMDP`, `IoT2.POMDP`). |
+| **`domains/`** | POMDP domain files (e.g. `IoT.POMDP`). |
 | **`src/`** | Java source: `main/SolvePOMDP.java` (entry point), `solver/` (ERPerseus, etc.), `iot/DeltaIOTConnector.java` (SMiLe, surprise), `pomdp/`. |
 | **`src/solver.config`** | Main solver configuration (algorithm, lambda, seeds, NFR thresholds, link failure, etc.). Can be overridden with `-DconfigPath=<path>`. |
 | **`scripts/`** | Python helpers: **`init_solver_config.py`** (interactive config builder), **`run_ablation.py`** (ablation runner), **`config_utils.py`** (shared config I/O). |
@@ -80,7 +80,7 @@ pip install -r requirements.txt
 
 ### 3. Compile and run the solver
 
-- **Algorithm and domain:** Controlled by `src/solver.config` (e.g. `algorithmType=erperseus`, `outputDirectory=output_dir`). Domain: `domains/IoT.POMDP` (or `IoT2.POMDP` as wired in code).
+- **Algorithm and domain:** Controlled by `src/solver.config` (e.g. `algorithmType=erperseus`, `outputDirectory=output_dir`). Domain: `domains/IoT.POMDP`.
 
 **From Eclipse**
 

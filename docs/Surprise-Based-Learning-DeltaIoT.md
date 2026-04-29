@@ -281,15 +281,3 @@ Optional: Logging (append to files)
   appendToFile("surpriseCC.txt",  exp(logSurprise_CC),  moteId, timestep)
   appendToFile("surpriseMIS.txt", current_MIS,           moteId, timestep)
 ```
-
-### Summary of roles
-
-| Step | Paper / role | Implementation |
-|------|----------------|----------------|
-| 1 | Work on copies of \(B\) and \(\pi_0\) | Deep copy `transitionBeliefCurr`, `transitionBeliefReset` |
-| 2 | \(\Delta\) (observed transition) | +1.0 to `[s][action][nextstate]` in both copies for all \(s\) |
-| 3 | Compute \(S_{\text{Bayes}}\) | CC, BF, or MIS from current/reset beliefs |
-| 4 | — | Choose one surprise measure; \(S = \exp(\texttt{logSurprise})\) |
-| 5 | \(\gamma = mS/(1+mS)\), \(m = P_c/(1-P_c)\) | `gamma = 1/(1 + 1/(m*S))`, clamped |
-| 6 | \(B_{X_n} = (1-\gamma)B_{X_n} + \gamma\pi_0 + \Delta\) | Blend: `(1-γ)*B_curr_temp + γ*B_reset_temp` for the action slice |
-| 7 | Update world model \(W\) | Assign `transitionBeliefCurr := B_curr_temp`; \(W\) = normalised counts |

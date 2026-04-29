@@ -510,7 +510,7 @@ public class SolvePOMDP {
 	 */
 	public void run(String pomdpFileName) {
 		
-		if(pomdpFileName.equals("IoT.POMDP") || pomdpFileName.equals("IoT2.POMDP"))
+		if(pomdpFileName.equals("IoT.POMDP"))
 		{
 			runCaseIoT(pomdpFileName);
 		}	
